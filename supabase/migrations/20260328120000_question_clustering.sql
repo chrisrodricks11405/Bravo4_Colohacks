@@ -54,7 +54,7 @@ returns table (
   text text,
   language text,
   lesson_marker_id text,
-  timestamp timestamptz,
+  "timestamp" timestamptz,
   similarity float
 )
 language sql
@@ -67,7 +67,7 @@ as $$
     q.text,
     q.language,
     q.lesson_marker_id,
-    q.timestamp,
+    q.timestamp as "timestamp",
     1 - (q.embedding <=> target_embedding) as similarity
   from public.session_questions q
   where q.session_id = target_session_id

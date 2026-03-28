@@ -63,7 +63,7 @@ returns text
 language sql
 immutable
 as $$
-  select encode(digest(coalesce(input, ''), 'sha256'), 'hex');
+  select encode(extensions.digest(convert_to(coalesce(input, ''), 'utf8'), 'sha256'), 'hex');
 $$;
 
 create or replace function public.teacher_owns_session(target_session_id text)

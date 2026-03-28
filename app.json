@@ -40,7 +40,8 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-asset",
-      "@sentry/react-native/expo"
+      "@sentry/react-native/expo",
+      "@sentry/react-native"
     ]
   }
 }

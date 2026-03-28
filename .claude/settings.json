@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx --yes expo install expo-router expo-linking expo-constants expo-status-bar react-native-safe-area-context react-native-screens expo-sqlite expo-secure-store expo-network expo-av @react-native-async-storage/async-storage react-native-reanimated react-native-gesture-handler)"
+      "Bash(npx --yes expo install expo-router expo-linking expo-constants expo-status-bar react-native-safe-area-context react-native-screens expo-sqlite expo-secure-store expo-network expo-av @react-native-async-storage/async-storage react-native-reanimated react-native-gesture-handler)",
+      "Bash(npm install:*)",
+      "Bash(grep -c \"const db = await getDatabase\\(\\)\" /Users/samueldsouza/Desktop/TABLET_APP/src/services/*.ts)",
+      "Bash(grep -n \"\\\\.execute\\\\|\\\\.prepare\\\\|\\\\.transaction\" /Users/samueldsouza/Desktop/TABLET_APP/src/services/*.ts)",
+      "Bash(node -e \"console.log\\(require\\(''expo-sqlite/package.json''\\).version\\)\")",
+      "Bash(node -e \"const pkg = require\\(''./app.json''\\); console.log\\(JSON.stringify\\(pkg.expo?.plugins, null, 2\\)\\)\")",
+      "Bash(node -e \"const pkg = require\\(''./app.config.js''\\); console.log\\(''app.config.js found''\\)\")"
     ]
   }
 }

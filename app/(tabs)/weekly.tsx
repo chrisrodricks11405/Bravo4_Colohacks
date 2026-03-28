@@ -24,6 +24,7 @@ import type {
 import {
   borderRadius,
   colors,
+  shadows,
   spacing,
   textStyles,
 } from "../../src/theme";

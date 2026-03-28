@@ -99,7 +99,7 @@ function RecentSessionRow({ session, onPress }: { session: RecentSession; onPres
       <View style={styles.sessionRowRight}>
         <View style={styles.sessionConfusionBlock}>
           <Text style={styles.sessionConfusionLabel}>CONFUSION INDEX</Text>
-          <ConfusionBar value={session.confusionIndexAvg} />
+          <ConfusionBar value={session.confusionIndexAvg ?? null} />
         </View>
         <View style={styles.sessionBadges}>
           <Badge label={session.status === "active" ? "Active Now" : "Ended"} variant={statusVariant} size="sm" />
@@ -256,7 +256,7 @@ export default function HomeScreen() {
                   <View style={styles.liveFeedMetrics}>
                     <View style={styles.liveFeedMetric}>
                       <Text style={styles.liveFeedMetricLabel}>CONFUSION INDEX</Text>
-                      <ConfusionBar value={latestSession.confusionIndexAvg} />
+                      <ConfusionBar value={latestSession.confusionIndexAvg ?? null} />
                     </View>
                   </View>
                   <Button

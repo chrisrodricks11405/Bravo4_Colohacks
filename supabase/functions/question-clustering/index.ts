@@ -49,6 +49,9 @@ interface ClusterRow {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const openAIKey = Deno.env.get("OPENAI_API_KEY");
+const embeddingModel =
+  Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
 const QUESTION_TABLE = Deno.env.get("SUPABASE_SESSION_QUESTIONS_TABLE") ?? "session_questions";
 const CLUSTER_TABLE =
   Deno.env.get("SUPABASE_MISCONCEPTION_CLUSTERS_TABLE") ?? "misconception_clusters";
@@ -108,6 +111,70 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
       ...(init?.headers ?? {}),
     },
   });
+}
+
+async function parseOpenAIError(response: Response) {
+  const fallback = `${response.status} ${response.statusText}`.trim();
+
+  try {
+    const data = await response.json();
+    const message =
+      data &&
+      typeof data === "object" &&
+      "error" in data &&
+      data.error &&
+      typeof data.error === "object" &&
+      "message" in data.error &&
+      typeof data.error.message === "string"
+        ? data.error.message
+        : null;
+
+    return message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function formatVectorEmbedding(values: number[]) {
+  return `[${values.join(",")}]`;
+}
+
+async function generateEmbeddings(texts: string[]) {
+  if (!openAIKey) {
+    return [];
+  }
+
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAIKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: embeddingModel,
+      input: texts,
+      encoding_format: "float",
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseOpenAIError(response));
+  }
+
+  const payload = (await response.json()) as {
+    data?: Array<{ embedding?: number[]; index?: number }>;
+  };
+
+  return (payload.data ?? [])
+    .slice()
+    .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
+    .map((item) =>
+      Array.isArray(item.embedding)
+        ? formatVectorEmbedding(
+            item.embedding.filter((value) => typeof value === "number" && Number.isFinite(value))
+          )
+        : null
+    );
 }
 
 function slugify(value: string) {
@@ -590,6 +657,68 @@ async function buildSemanticClusters(args: {
   ];
 }
 
+async function populateQuestionEmbeddings(args: {
+  supabaseAdmin: ReturnType<typeof createClient>;
+  questions: QuestionRow[];
+}) {
+  const { supabaseAdmin, questions } = args;
+
+  if (!openAIKey) {
+    return questions;
+  }
+
+  const questionsMissingEmbeddings = questions.filter(
+    (question) => !question.embedding && question.text.trim().length > 0
+  );
+
+  if (questionsMissingEmbeddings.length === 0) {
+    return questions;
+  }
+
+  try {
+    const embeddingsByQuestionId = new Map<string, string>();
+
+    for (let start = 0; start < questionsMissingEmbeddings.length; start += 24) {
+      const batch = questionsMissingEmbeddings.slice(start, start + 24);
+      const batchEmbeddings = await generateEmbeddings(batch.map((question) => question.text));
+
+      batch.forEach((question, index) => {
+        const embedding = batchEmbeddings[index];
+        if (embedding) {
+          embeddingsByQuestionId.set(question.id, embedding);
+        }
+      });
+    }
+
+    if (embeddingsByQuestionId.size === 0) {
+      return questions;
+    }
+
+    const rowsToUpsert = questions
+      .filter((question) => embeddingsByQuestionId.has(question.id))
+      .map((question) => ({
+        ...question,
+        embedding: embeddingsByQuestionId.get(question.id) ?? null,
+      }));
+
+    const { error } = await supabaseAdmin
+      .from(QUESTION_TABLE)
+      .upsert(rowsToUpsert, { onConflict: "id" });
+
+    if (error) {
+      throw error;
+    }
+
+    return questions.map((question) => ({
+      ...question,
+      embedding: embeddingsByQuestionId.get(question.id) ?? question.embedding ?? null,
+    }));
+  } catch (error) {
+    console.error("question-clustering embedding generation failed", error);
+    return questions;
+  }
+}
+
 serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -640,8 +769,12 @@ serve(async (request) => {
       throw existingClusterResult.error;
     }
 
-    const questions = (questionResult.data ?? []) as QuestionRow[];
+    const initialQuestions = (questionResult.data ?? []) as QuestionRow[];
     const existingClusters = (existingClusterResult.data ?? []) as ClusterRow[];
+    const questions = await populateQuestionEmbeddings({
+      supabaseAdmin,
+      questions: initialQuestions,
+    });
 
     if (questions.length === 0) {
       if (existingClusters.length > 0) {
