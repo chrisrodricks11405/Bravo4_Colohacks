@@ -6,6 +6,8 @@ export const CREATE_TABLES_SQL = [
     teacher_id TEXT NOT NULL,
     join_code TEXT NOT NULL,
     qr_payload TEXT NOT NULL,
+    session_access_token TEXT,
+    session_access_token_hash TEXT,
     subject TEXT NOT NULL,
     topic TEXT NOT NULL,
     grade_class TEXT NOT NULL,

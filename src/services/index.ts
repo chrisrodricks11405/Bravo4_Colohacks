@@ -32,6 +32,7 @@ export {
 } from "./session";
 export type { SessionChannelStatus } from "./session";
 export {
+  buildFallbackClusters,
   buildTrendPoint,
   computeConfusionIndex,
   computeLostPercent,
@@ -73,6 +74,7 @@ export {
 } from "./polls";
 export type { PollChannelStatus } from "./polls";
 export {
+  buildSessionSummaryFromArtifacts,
   generateSessionSummary,
   getSessionSummary,
   listSessionSummaries,

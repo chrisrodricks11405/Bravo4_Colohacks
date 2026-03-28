@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { hasSupabaseConfig } from "../lib/supabase";
 import { useAuth } from "../providers";
@@ -30,6 +30,7 @@ export function useRecentSessions({
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const hasCompletedInitialRefreshRef = useRef(false);
 
   const loadLocalState = async () => {
     const [localSessions, pendingJobs] = await Promise.all([
@@ -37,7 +38,9 @@ export function useRecentSessions({
       countPendingSyncJobs(),
     ]);
 
-    setSessions(localSessions);
+    startTransition(() => {
+      setSessions(localSessions);
+    });
     setPendingSyncCount(pendingJobs);
   };
 
@@ -76,6 +79,9 @@ export function useRecentSessions({
       setIsLoading(false);
       setIsRefreshing(false);
       setIsSyncing(false);
+      if (mode === "initial") {
+        hasCompletedInitialRefreshRef.current = true;
+      }
     }
   };
 
@@ -85,7 +91,12 @@ export function useRecentSessions({
 
   useFocusEffect(
     useCallback(() => {
+      if (!hasCompletedInitialRefreshRef.current) {
+        return undefined;
+      }
+
       void refresh("focus");
+      return undefined;
     }, [user?.id, supabaseReachable, limit, autoSync])
   );
 

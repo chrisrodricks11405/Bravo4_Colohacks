@@ -15,6 +15,8 @@ export interface SessionMeta {
   teacherId: string;
   joinCode: string;
   qrPayload: string;
+  accessToken?: string;
+  accessTokenHash?: string;
   subject: string;
   topic: string;
   gradeClass: string;

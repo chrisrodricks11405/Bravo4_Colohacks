@@ -78,32 +78,17 @@ function formatVoiceLabel(voice: string) {
   return voice.charAt(0).toUpperCase() + voice.slice(1);
 }
 
-function TextField({
-  label,
-  value,
-  placeholder,
-  onChangeText,
-  keyboardType,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  onChangeText: (value: string) => void;
-  keyboardType?: "default" | "numeric";
-}) {
+function SectionHeader({ title, icon }: { title: string; icon: string }) {
   return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.text.tertiary}
-        style={styles.input}
-        keyboardType={keyboardType}
-      />
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionIcon}>{icon}</Text>
+      <Text style={styles.sectionTitle}>{title}</Text>
     </View>
   );
+}
+
+function FieldLabel({ label }: { label: string }) {
+  return <Text style={styles.fieldLabel}>{label}</Text>;
 }
 
 export default function SettingsScreen() {
@@ -128,10 +113,7 @@ export default function SettingsScreen() {
   const voiceCapabilities = voiceProvider.getCapabilities();
 
   useEffect(() => {
-    if (!preferences.isLoaded) {
-      return;
-    }
-
+    if (!preferences.isLoaded) return;
     setDraft(
       toDraft({
         defaultSubject: preferences.defaultSubject,
@@ -145,421 +127,286 @@ export default function SettingsScreen() {
       })
     );
   }, [
-    preferences.aiProviderEnabled,
-    preferences.defaultGradeClass,
-    preferences.defaultLanguage,
-    preferences.defaultLostThreshold,
-    preferences.defaultSubject,
-    preferences.isLoaded,
-    preferences.ttsLocale,
-    preferences.ttsVoice,
-    preferences.voiceEnabled,
+    preferences.aiProviderEnabled, preferences.defaultGradeClass,
+    preferences.defaultLanguage, preferences.defaultLostThreshold,
+    preferences.defaultSubject, preferences.isLoaded,
+    preferences.ttsLocale, preferences.ttsVoice, preferences.voiceEnabled,
   ]);
 
   if (!preferences.isLoaded) {
-    return (
-      <StateScreen
-        title="Loading settings"
-        message="Reading teacher preferences from local storage."
-        loading
-      />
-    );
+    return <StateScreen title="Loading settings" message="Reading teacher preferences." loading />;
   }
 
-  const normalizedCurrent = normalizeDraft(
-    toDraft({
-      defaultSubject: preferences.defaultSubject,
-      defaultGradeClass: preferences.defaultGradeClass,
-      defaultLanguage: preferences.defaultLanguage,
-      defaultLostThreshold: preferences.defaultLostThreshold,
-      voiceEnabled: preferences.voiceEnabled,
-      ttsVoice: preferences.ttsVoice,
-      ttsLocale: preferences.ttsLocale,
-      aiProviderEnabled: preferences.aiProviderEnabled,
-    }),
-    {
-      defaultSubject: preferences.defaultSubject,
-      defaultGradeClass: preferences.defaultGradeClass,
-      defaultLanguage: preferences.defaultLanguage,
-      defaultLostThreshold: preferences.defaultLostThreshold,
-      voiceEnabled: preferences.voiceEnabled,
-      aiProviderEnabled: preferences.aiProviderEnabled,
-      theme: preferences.theme,
-      ttsVoice: preferences.ttsVoice,
-      ttsLocale: preferences.ttsLocale,
-    }
-  );
+  const normalizedCurrent = normalizeDraft(toDraft({
+    defaultSubject: preferences.defaultSubject, defaultGradeClass: preferences.defaultGradeClass,
+    defaultLanguage: preferences.defaultLanguage, defaultLostThreshold: preferences.defaultLostThreshold,
+    voiceEnabled: preferences.voiceEnabled, ttsVoice: preferences.ttsVoice,
+    ttsLocale: preferences.ttsLocale, aiProviderEnabled: preferences.aiProviderEnabled,
+  }), {
+    defaultSubject: preferences.defaultSubject, defaultGradeClass: preferences.defaultGradeClass,
+    defaultLanguage: preferences.defaultLanguage, defaultLostThreshold: preferences.defaultLostThreshold,
+    voiceEnabled: preferences.voiceEnabled, aiProviderEnabled: preferences.aiProviderEnabled,
+    theme: preferences.theme, ttsVoice: preferences.ttsVoice, ttsLocale: preferences.ttsLocale,
+  });
 
   const normalizedDraft = normalizeDraft(draft, normalizedCurrent);
-  const hasChanges =
-    JSON.stringify(normalizedDraft) !== JSON.stringify(normalizedCurrent);
+  const hasChanges = JSON.stringify(normalizedDraft) !== JSON.stringify(normalizedCurrent);
 
   const handleSave = async () => {
     setSaveState("saving");
     setSaveMessage(null);
-
     try {
       await saveTeacherPreferences(normalizedDraft);
       preferences.loadPreferences(normalizedDraft);
       setDraft(toDraft(normalizedDraft));
       setSaveState("saved");
-      setSaveMessage("Preferences saved to local SQLite.");
+      setSaveMessage("Preferences saved.");
     } catch (error) {
       setSaveState("error");
-      setSaveMessage(
-        error instanceof Error
-          ? error.message
-          : "We could not save your preferences."
-      );
+      setSaveMessage(error instanceof Error ? error.message : "Could not save.");
     }
   };
 
   const handleReset = async () => {
-    const resetPreferences: TeacherPreferences = {
-      ...DEFAULT_PREFERENCES,
-      theme: preferences.theme,
-    };
-
+    const resetPreferences: TeacherPreferences = { ...DEFAULT_PREFERENCES, theme: preferences.theme };
     setSaveState("saving");
     setSaveMessage(null);
-
     try {
       await saveTeacherPreferences(resetPreferences);
       preferences.loadPreferences(resetPreferences);
       setDraft(toDraft(resetPreferences));
       setSaveState("saved");
-      setSaveMessage("Teacher defaults restored.");
+      setSaveMessage("Defaults restored.");
     } catch (error) {
       setSaveState("error");
-      setSaveMessage(
-        error instanceof Error
-          ? error.message
-          : "We could not reset preferences."
-      );
+      setSaveMessage(error instanceof Error ? error.message : "Could not reset.");
     }
   };
 
   const handleSignOut = async () => {
     setSaveState("saving");
     setSaveMessage("Signing out…");
-
-    try {
-      await signOut();
-    } catch (error) {
+    try { await signOut(); } catch (error) {
       setSaveState("error");
-      setSaveMessage(
-        error instanceof Error ? error.message : "We could not sign you out."
-      );
+      setSaveMessage(error instanceof Error ? error.message : "Could not sign out.");
     }
   };
 
-  const voiceStatus =
-    !draft.voiceEnabled
-      ? { label: "Voice off", variant: "neutral" as const }
-      : voiceCapabilities.available && voiceServiceReachable
-        ? { label: "Provider ready", variant: "success" as const }
-        : voiceCapabilities.available
-          ? { label: "Provider offline", variant: "warning" as const }
-          : { label: "Provider unavailable", variant: "neutral" as const };
-
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Teacher preferences and classroom defaults</Text>
-
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Top action bar */}
         <View style={styles.topBar}>
           <Badge
             label={
-              saveState === "saving"
-                ? "Saving"
-                : saveState === "saved"
-                  ? "Saved"
-                  : hasChanges
-                    ? "Unsaved changes"
-                    : "Up to date"
+              saveState === "saving" ? "Saving…"
+                : saveState === "saved" ? "Up to date"
+                : hasChanges ? "Unsaved changes"
+                : "Up to date"
             }
-            variant={
-              saveState === "error"
-                ? "error"
-                : saveState === "saved"
-                  ? "success"
-                  : hasChanges
-                    ? "warning"
-                    : "neutral"
-            }
+            variant={saveState === "error" ? "error" : saveState === "saved" ? "success" : hasChanges ? "warning" : "neutral"}
             size="md"
+            dot
           />
           <View style={styles.topBarActions}>
-            <Button
-              title="Reset"
-              onPress={handleReset}
-              variant="outline"
-              size="sm"
-              disabled={saveState === "saving"}
-            />
-            <Button
-              title="Save Settings"
-              onPress={handleSave}
-              size="sm"
-              loading={saveState === "saving"}
-              disabled={!hasChanges}
-            />
+            <Button title="Reset" onPress={handleReset} variant="ghost" size="sm" disabled={saveState === "saving"} />
+            <Button title="Save Settings" onPress={handleSave} size="sm" loading={saveState === "saving"} disabled={!hasChanges} />
           </View>
         </View>
 
+        <Text style={styles.pageTitle}>Settings</Text>
+        <Text style={styles.pageSubtitle}>Configure your classroom AI preferences and account.</Text>
+
         {saveMessage ? (
-          <View
-            style={[
-              styles.feedbackBox,
-              saveState === "error" ? styles.feedbackError : styles.feedbackSuccess,
-            ]}
-          >
-            <Text
-              style={[
-                styles.feedbackText,
-                saveState === "error" ? styles.feedbackErrorText : styles.feedbackSuccessText,
-              ]}
-            >
+          <View style={[styles.feedbackBox, saveState === "error" ? styles.feedbackError : styles.feedbackSuccess]}>
+            <Text style={[styles.feedbackText, saveState === "error" ? styles.feedbackErrorText : styles.feedbackSuccessText]}>
               {saveMessage}
             </Text>
           </View>
         ) : null}
 
-        <Card variant="default" padding="lg" style={styles.card}>
-          <Text style={styles.cardTitle}>Session Defaults</Text>
-          <Text style={styles.cardSubtitle}>
-            These values prefill session setup and power the home screen CTA.
-          </Text>
+        {/* Session Defaults */}
+        <Card variant="tonal" padding="lg" style={styles.card}>
+          <SectionHeader title="Session Defaults" icon="📋" />
 
-          <TextField
-            label="Default Subject"
+          <FieldLabel label="DEFAULT SUBJECT" />
+          <TextInput
             value={draft.defaultSubject}
-            placeholder="Science"
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, defaultSubject: value }))
-            }
-          />
-          <TextField
-            label="Grade / Class"
-            value={draft.defaultGradeClass}
-            placeholder="Grade 8 A"
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, defaultGradeClass: value }))
-            }
+            onChangeText={(v) => setDraft((c) => ({ ...c, defaultSubject: v }))}
+            placeholder="Mathematics"
+            placeholderTextColor={colors.text.tertiary}
+            style={styles.input}
           />
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Default Language</Text>
-            <View style={styles.languageRow}>
-              {COMMON_LANGUAGES.map((language) => {
-                const selected =
-                  draft.defaultLanguage.trim().toLowerCase() === language.toLowerCase();
-
-                return (
-                  <TouchableOpacity
-                    key={language}
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      setDraft((current) => ({ ...current, defaultLanguage: language }))
-                    }
-                    style={[
-                      styles.languageChip,
-                      selected && styles.languageChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.languageChipText,
-                        selected && styles.languageChipTextActive,
-                      ]}
-                    >
-                      {language}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TextInput
-              value={draft.defaultLanguage}
-              onChangeText={(value) =>
-                setDraft((current) => ({ ...current, defaultLanguage: value }))
-              }
-              placeholder="Or type a custom language"
-              placeholderTextColor={colors.text.tertiary}
-              style={styles.input}
-            />
+          <FieldLabel label="GRADE LEVEL" />
+          <View style={styles.chipRow}>
+            {["Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"].map((grade) => {
+              const selected = draft.defaultGradeClass.trim() === grade;
+              return (
+                <TouchableOpacity
+                  key={grade}
+                  activeOpacity={0.8}
+                  onPress={() => setDraft((c) => ({ ...c, defaultGradeClass: grade }))}
+                  style={[styles.chip, selected && styles.chipActive]}
+                >
+                  <Text style={[styles.chipText, selected && styles.chipTextActive]}>{grade.replace("Grade ", "Grade ")}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          <TextField
-            label="Lost Threshold Default"
-            value={draft.defaultLostThreshold}
-            placeholder="40"
-            keyboardType="numeric"
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, defaultLostThreshold: value }))
-            }
-          />
-          <Text style={styles.helperText}>
-            Used as the default threshold for intervention prompts. Valid range: 0 to 100.
-          </Text>
+          <View style={styles.fieldRow}>
+            <View style={styles.fieldRowItem}>
+              <FieldLabel label="DEFAULT LANGUAGE" />
+              <View style={styles.chipRow}>
+                {COMMON_LANGUAGES.map((lang) => {
+                  const selected = draft.defaultLanguage.trim().toLowerCase() === lang.toLowerCase();
+                  return (
+                    <TouchableOpacity
+                      key={lang}
+                      activeOpacity={0.8}
+                      onPress={() => setDraft((c) => ({ ...c, defaultLanguage: lang }))}
+                      style={[styles.chip, selected && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipText, selected && styles.chipTextActive]}>
+                        {selected ? `🌐 ${lang}` : lang}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            <View style={styles.fieldRowItem}>
+              <FieldLabel label="LOST THRESHOLD (MIN)" />
+              <View style={styles.stepperRow}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => setDraft((c) => ({
+                    ...c,
+                    defaultLostThreshold: String(Math.max(0, Number(c.defaultLostThreshold) - 1)),
+                  }))}
+                >
+                  <Text style={styles.stepperButtonText}>—</Text>
+                </TouchableOpacity>
+                <TextInput
+                  value={draft.defaultLostThreshold}
+                  onChangeText={(v) => setDraft((c) => ({ ...c, defaultLostThreshold: v }))}
+                  keyboardType="numeric"
+                  style={styles.stepperInput}
+                />
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => setDraft((c) => ({
+                    ...c,
+                    defaultLostThreshold: String(Math.min(100, Number(c.defaultLostThreshold) + 1)),
+                  }))}
+                >
+                  <Text style={styles.stepperButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         </Card>
 
-        <Card variant="default" padding="lg" style={styles.card}>
-          <Text style={styles.cardTitle}>AI & Voice</Text>
-          <Text style={styles.cardSubtitle}>
-            Control AI assistance, speech settings, and graceful fallbacks across the teacher app.
-          </Text>
+        {/* AI & Voice */}
+        <Card variant="tonal" padding="lg" style={styles.card}>
+          <SectionHeader title="AI & Voice" icon="🤖" />
 
           <View style={styles.toggleRow}>
             <View style={styles.toggleCopy}>
-              <Text style={styles.toggleTitle}>AI Provider</Text>
-              <Text style={styles.toggleDescription}>
-                Enable AI coaching badges and future insight generation.
-              </Text>
+              <Text style={styles.toggleTitle}>AI Provider Premium</Text>
+              <Text style={styles.toggleDescription}>Use advanced LLM for deeper student sentiment analysis</Text>
             </View>
             <Switch
               value={draft.aiProviderEnabled}
-              onValueChange={(value) =>
-                setDraft((current) => ({ ...current, aiProviderEnabled: value }))
-              }
+              onValueChange={(v) => setDraft((c) => ({ ...c, aiProviderEnabled: v }))}
               trackColor={{ false: colors.surface.border, true: colors.primary[300] }}
-              thumbColor={
-                draft.aiProviderEnabled ? colors.primary[600] : colors.surface.card
-              }
+              thumbColor={draft.aiProviderEnabled ? colors.primary[600] : colors.surface.card}
             />
           </View>
 
           <View style={styles.toggleRow}>
             <View style={styles.toggleCopy}>
-              <Text style={styles.toggleTitle}>Voice Features</Text>
-              <Text style={styles.toggleDescription}>
-                Enable voice-to-poll, spoken explanations, and post-session reflections when the provider is available.
-              </Text>
+              <Text style={styles.toggleTitle}>Voice Recognition</Text>
+              <Text style={styles.toggleDescription}>Enable real-time transcription and speaker identification</Text>
             </View>
             <Switch
               value={draft.voiceEnabled}
-              onValueChange={(value) =>
-                setDraft((current) => ({ ...current, voiceEnabled: value }))
-              }
+              onValueChange={(v) => setDraft((c) => ({ ...c, voiceEnabled: v }))}
               trackColor={{ false: colors.surface.border, true: colors.primary[300] }}
-              thumbColor={
-                draft.voiceEnabled ? colors.primary[600] : colors.surface.card
-              }
+              thumbColor={draft.voiceEnabled ? colors.primary[600] : colors.surface.card}
             />
           </View>
 
-          <View style={styles.voiceStatusCard}>
-            <View style={styles.voiceStatusHeader}>
-              <View>
-                <Text style={styles.toggleTitle}>Voice provider status</Text>
-                <Text style={styles.toggleDescription}>
-                  Voice controls automatically hide when transcription or TTS is unavailable.
-                </Text>
+          {draft.voiceEnabled && (
+            <>
+              <View style={styles.voiceSettings}>
+                <FieldLabel label="TTS VOICE" />
+                <View style={styles.chipRow}>
+                  {VOICE_TTS_OPTIONS.map((voice) => {
+                    const selected = draft.ttsVoice === voice;
+                    return (
+                      <TouchableOpacity
+                        key={voice}
+                        activeOpacity={0.8}
+                        onPress={() => setDraft((c) => ({ ...c, ttsVoice: voice }))}
+                        style={[styles.chip, selected && styles.chipActive]}
+                      >
+                        <Text style={[styles.chipText, selected && styles.chipTextActive]}>{formatVoiceLabel(voice)}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <FieldLabel label="SPEECH LANGUAGE" />
+                <View style={styles.chipRow}>
+                  {VOICE_LOCALE_OPTIONS.map((opt) => {
+                    const selected = draft.ttsLocale === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        activeOpacity={0.8}
+                        onPress={() => setDraft((c) => ({ ...c, ttsLocale: opt.value }))}
+                        style={[styles.chip, selected && styles.chipActive]}
+                      >
+                        <Text style={[styles.chipText, selected && styles.chipTextActive]}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
-              <Badge label={voiceStatus.label} variant={voiceStatus.variant} size="sm" />
-            </View>
-            {!voiceCapabilities.available ? (
-              <Text style={styles.voiceStatusText}>
-                {voiceCapabilities.reason ??
-                  "Connect a configured voice provider to enable recording and spoken playback."}
-              </Text>
-            ) : null}
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>TTS Voice</Text>
-            <View style={styles.languageRow}>
-              {VOICE_TTS_OPTIONS.map((voice) => {
-                const selected = draft.ttsVoice === voice;
-
-                return (
-                  <TouchableOpacity
-                    key={voice}
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      setDraft((current) => ({ ...current, ttsVoice: voice }))
-                    }
-                    style={[
-                      styles.languageChip,
-                      selected && styles.languageChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.languageChipText,
-                        selected && styles.languageChipTextActive,
-                      ]}
-                    >
-                      {formatVoiceLabel(voice)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Speech Language</Text>
-            <View style={styles.languageRow}>
-              {VOICE_LOCALE_OPTIONS.map((localeOption) => {
-                const selected = draft.ttsLocale === localeOption.value;
-
-                return (
-                  <TouchableOpacity
-                    key={localeOption.value}
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        ttsLocale: localeOption.value,
-                      }))
-                    }
-                    style={[
-                      styles.languageChip,
-                      selected && styles.languageChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.languageChipText,
-                        selected && styles.languageChipTextActive,
-                      ]}
-                    >
-                      {localeOption.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TextInput
-              value={draft.ttsLocale}
-              onChangeText={(value) =>
-                setDraft((current) => ({ ...current, ttsLocale: value }))
-              }
-              placeholder="Or type a custom locale like en-GB"
-              placeholderTextColor={colors.text.tertiary}
-              style={styles.input}
-            />
-          </View>
+            </>
+          )}
         </Card>
 
-        <Card variant="default" padding="lg" style={styles.card}>
-          <Text style={styles.cardTitle}>Account</Text>
-          <View style={styles.accountRow}>
-            <Text style={styles.accountLabel}>Signed in as</Text>
-            <Text style={styles.accountValue}>{user?.email ?? "Unknown teacher"}</Text>
+        {/* Account */}
+        <Card variant="tonal" padding="lg" style={styles.card}>
+          <SectionHeader title="Account" icon="👤" />
+
+          <View style={styles.accountCard}>
+            <View style={styles.accountAvatar}>
+              <Text style={styles.accountAvatarText}>
+                {(user?.email ?? "T").charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View>
+              <Text style={styles.accountLabel}>Signed in as</Text>
+              <Text style={styles.accountEmail}>{user?.email ?? "Unknown"}</Text>
+            </View>
           </View>
+
           <View style={styles.accountRow}>
-            <Text style={styles.accountLabel}>App</Text>
-            <Text style={styles.accountValue}>ClassPulse AI Teacher 1.0.0</Text>
+            <Text style={styles.accountRowLabel}>APP VERSION</Text>
+            <Text style={styles.accountRowValue}>v2.4.0 (Build 892)</Text>
           </View>
+
           <Button
             title="Sign Out"
             onPress={handleSignOut}
             variant="danger"
             size="md"
             style={styles.signOutButton}
+            icon={<Text style={{ color: colors.text.inverse, fontSize: 14 }}>↗</Text>}
           />
         </Card>
       </ScrollView>
@@ -575,137 +422,149 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.xl,
     paddingBottom: spacing["3xl"],
+    maxWidth: 780,
+    alignSelf: "center",
+    width: "100%",
   },
-  title: {
-    ...textStyles.displayMedium,
-    color: colors.text.primary,
-  },
-  subtitle: {
-    ...textStyles.bodyLarge,
-    color: colors.text.secondary,
-    marginTop: spacing.xxs,
-    marginBottom: spacing.xl,
-  },
+
+  // Top bar
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: spacing.base,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   topBarActions: {
     flexDirection: "row",
     gap: spacing.sm,
   },
+
+  pageTitle: {
+    ...textStyles.headingLarge,
+    color: colors.text.primary,
+  },
+  pageSubtitle: {
+    ...textStyles.bodyMedium,
+    color: colors.text.secondary,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xl,
+  },
+
+  // Feedback
   feedbackBox: {
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
-  feedbackError: {
-    backgroundColor: colors.status.errorBg,
-  },
-  feedbackSuccess: {
-    backgroundColor: colors.status.successBg,
-  },
-  feedbackText: {
-    ...textStyles.bodySmall,
-  },
-  feedbackErrorText: {
-    color: "#991B1B",
-  },
-  feedbackSuccessText: {
-    color: "#065F46",
-  },
+  feedbackError: { backgroundColor: colors.status.errorBg },
+  feedbackSuccess: { backgroundColor: colors.status.successBg },
+  feedbackText: { ...textStyles.bodySmall },
+  feedbackErrorText: { color: "#991B1B" },
+  feedbackSuccessText: { color: "#065F46" },
+
+  // Cards
   card: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
+    borderRadius: borderRadius["2xl"],
   },
-  cardTitle: {
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  sectionIcon: {
+    fontSize: 18,
+  },
+  sectionTitle: {
     ...textStyles.headingSmall,
     color: colors.text.primary,
   },
-  cardSubtitle: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  fieldGroup: {
-    marginBottom: spacing.base,
-  },
+
+  // Fields
   fieldLabel: {
-    ...textStyles.label,
+    ...textStyles.caption,
     color: colors.text.secondary,
+    fontWeight: "700",
+    letterSpacing: 1,
     marginBottom: spacing.sm,
+    marginTop: spacing.lg,
   },
   input: {
     minHeight: 52,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    borderWidth: 0,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.surface.background,
+    backgroundColor: colors.surface.card,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     color: colors.text.primary,
     ...textStyles.bodyMedium,
   },
-  languageRow: {
+  fieldRow: {
+    flexDirection: "row",
+    gap: spacing.xl,
+  },
+  fieldRowItem: {
+    flex: 1,
+  },
+
+  // Chips
+  chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-    marginBottom: spacing.md,
   },
-  languageChip: {
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+  chip: {
     borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface.background,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.surface.card,
   },
-  languageChipActive: {
-    borderColor: colors.primary[600],
-    backgroundColor: colors.primary[50],
+  chipActive: {
+    backgroundColor: colors.primary[600],
   },
-  languageChipText: {
+  chipText: {
     ...textStyles.bodySmall,
     color: colors.text.secondary,
     fontWeight: "600",
   },
-  languageChipTextActive: {
-    color: colors.primary[700],
+  chipTextActive: {
+    color: colors.text.inverse,
   },
-  helperText: {
-    ...textStyles.bodySmall,
+
+  // Stepper
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface.card,
+    borderRadius: borderRadius.lg,
+    overflow: "hidden",
+  },
+  stepperButton: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperButtonText: {
+    ...textStyles.headingSmall,
     color: colors.text.secondary,
-    marginTop: -spacing.sm,
   },
+  stepperInput: {
+    flex: 1,
+    textAlign: "center",
+    ...textStyles.headingSmall,
+    color: colors.text.primary,
+    paddingVertical: spacing.md,
+  },
+
+  // Toggles
   toggleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     gap: spacing.base,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.borderLight,
-  },
-  voiceStatusCard: {
-    marginTop: spacing.base,
-    padding: spacing.base,
-    borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.cardHover,
-    gap: spacing.sm,
-  },
-  voiceStatusHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: spacing.base,
-    alignItems: "flex-start",
-  },
-  voiceStatusText: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
+    paddingVertical: spacing.base,
   },
   toggleCopy: {
     flex: 1,
@@ -720,22 +579,58 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xxs,
   },
-  accountRow: {
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.borderLight,
+  voiceSettings: {
+    marginTop: spacing.sm,
+  },
+
+  // Account
+  accountCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surface.card,
+    borderRadius: borderRadius.xl,
+    padding: spacing.base,
+    marginBottom: spacing.lg,
+  },
+  accountAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary[100],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountAvatarText: {
+    ...textStyles.headingSmall,
+    color: colors.primary[700],
   },
   accountLabel: {
     ...textStyles.bodySmall,
     color: colors.text.secondary,
-    marginBottom: spacing.xxs,
   },
-  accountValue: {
+  accountEmail: {
     ...textStyles.bodyMedium,
     color: colors.text.primary,
     fontWeight: "600",
   },
+  accountRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+  },
+  accountRowLabel: {
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+  },
+  accountRowValue: {
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+  },
   signOutButton: {
-    marginTop: spacing.lg,
+    alignSelf: "flex-end",
   },
 });

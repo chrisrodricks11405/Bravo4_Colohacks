@@ -7,10 +7,11 @@ import {
   ViewStyle,
   TextStyle,
   View,
+  Insets,
 } from "react-native";
 import { colors, spacing, borderRadius, textStyles } from "../../theme";
 
-type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger";
+type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "dark";
 type ButtonSize = "sm" | "md" | "lg";
 
 interface ButtonProps {
@@ -25,6 +26,8 @@ interface ButtonProps {
   fullWidth?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  accessibilityHint?: string;
+  accessibilityLabel?: string;
 }
 
 export function Button({
@@ -39,6 +42,8 @@ export function Button({
   fullWidth = false,
   style,
   textStyle,
+  accessibilityHint,
+  accessibilityLabel,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
@@ -46,7 +51,12 @@ export function Button({
     <TouchableOpacity
       onPress={onPress}
       disabled={isDisabled}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
+      hitSlop={styles.hitSlop}
       style={[
         styles.base,
         variantStyles[variant],
@@ -59,7 +69,11 @@ export function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === "primary" || variant === "danger" ? colors.text.inverse : colors.primary[600]}
+          color={
+            variant === "primary" || variant === "danger" || variant === "dark"
+              ? colors.text.inverse
+              : colors.primary[600]
+          }
         />
       ) : (
         <View style={styles.content}>
@@ -92,14 +106,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: "transparent",
+    borderWidth: 0,
   },
   fullWidth: {
     width: "100%",
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   content: {
     flexDirection: "row",
@@ -113,32 +126,39 @@ const styles = StyleSheet.create({
   },
   textBase: {
     fontWeight: "600",
+    letterSpacing: 0.2,
   },
   textDisabled: {
     opacity: 0.7,
   },
+  hitSlop: {
+    top: 6,
+    right: 6,
+    bottom: 6,
+    left: 6,
+  } satisfies Insets,
 });
 
 const variantStyles: Record<ButtonVariant, ViewStyle> = {
   primary: {
     backgroundColor: colors.primary[600],
-    borderColor: colors.primary[600],
   },
   secondary: {
     backgroundColor: colors.primary[50],
-    borderColor: colors.primary[100],
   },
   outline: {
     backgroundColor: "transparent",
+    borderWidth: 1.5,
     borderColor: colors.surface.border,
   },
   ghost: {
     backgroundColor: "transparent",
-    borderColor: "transparent",
   },
   danger: {
     backgroundColor: colors.status.error,
-    borderColor: colors.status.error,
+  },
+  dark: {
+    backgroundColor: colors.dark.surface,
   },
 };
 
@@ -148,12 +168,13 @@ const variantTextStyles: Record<ButtonVariant, TextStyle> = {
   outline: { color: colors.text.primary },
   ghost: { color: colors.primary[600] },
   danger: { color: colors.text.inverse },
+  dark: { color: colors.text.inverse },
 };
 
 const sizeStyles: Record<ButtonSize, ViewStyle> = {
-  sm: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minHeight: 36 },
-  md: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, minHeight: 44 },
-  lg: { paddingHorizontal: spacing.xl, paddingVertical: spacing.base, minHeight: 52 },
+  sm: { paddingHorizontal: spacing.base, paddingVertical: spacing.sm + 2, minHeight: 40 },
+  md: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md, minHeight: 48 },
+  lg: { paddingHorizontal: spacing["2xl"], paddingVertical: spacing.base, minHeight: 52 },
 };
 
 const sizeTextStyles: Record<ButtonSize, TextStyle> = {

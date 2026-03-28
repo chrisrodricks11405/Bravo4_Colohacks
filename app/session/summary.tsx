@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StateScreen } from "../../src/components/app/StateScreen";
 import { SessionSummaryTimeline } from "../../src/components/summary/SessionSummaryTimeline";
 import { Badge, Button, Card } from "../../src/components/ui";
+import { Sentry } from "../../src/lib/monitoring";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useAuth } from "../../src/providers";
 import {
@@ -485,6 +486,7 @@ export default function SessionSummaryScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <Sentry.TimeToInitialDisplay record />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -912,6 +914,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing["3xl"],
     gap: spacing.xl,
   },
+
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -932,6 +936,7 @@ const styles = StyleSheet.create({
   title: {
     ...textStyles.displayMedium,
     color: colors.text.primary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     ...textStyles.bodyLarge,
@@ -943,8 +948,11 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
+
+  // Hero recovery card (dark)
   heroCard: {
     backgroundColor: colors.dark.surface,
+    borderRadius: borderRadius["3xl"],
     ...shadows.lg,
   },
   heroTop: {
@@ -960,6 +968,7 @@ const styles = StyleSheet.create({
   heroEyebrow: {
     ...textStyles.label,
     color: colors.primary[200],
+    letterSpacing: 0.4,
   },
   heroScore: {
     ...textStyles.displayLarge,
@@ -971,6 +980,7 @@ const styles = StyleSheet.create({
     color: colors.dark.text,
     marginTop: spacing.sm,
     maxWidth: 560,
+    lineHeight: 24,
   },
   heroMetrics: {
     flexDirection: "row",
@@ -985,8 +995,6 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     borderRadius: borderRadius.xl,
     backgroundColor: colors.dark.surfaceLight,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
   },
   metricLabel: {
     ...textStyles.caption,
@@ -1004,6 +1012,8 @@ const styles = StyleSheet.create({
     color: colors.dark.textSecondary,
     marginTop: spacing.xs,
   },
+
+  // Two-column layout
   columns: {
     flexDirection: "row",
     gap: spacing.xl,
@@ -1021,11 +1031,15 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
     minWidth: 320,
   },
+
+  // Section cards
   sectionCard: {
     gap: spacing.base,
+    borderRadius: borderRadius["2xl"],
   },
   sideCard: {
     gap: spacing.base,
+    borderRadius: borderRadius["2xl"],
   },
   sectionHeader: {
     flexDirection: "row",
@@ -1042,35 +1056,36 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xs,
   },
+
+  // AI Narrative
   narrativeText: {
     ...textStyles.bodyLarge,
     color: colors.text.primary,
     marginTop: spacing.base,
+    lineHeight: 26,
   },
   nextActivityCard: {
     marginTop: spacing.lg,
     padding: spacing.base,
     borderRadius: borderRadius.xl,
     backgroundColor: colors.primary[50],
-    borderWidth: 1,
-    borderColor: colors.primary[100],
   },
   nextActivityLabel: {
     ...textStyles.label,
     color: colors.primary[700],
+    letterSpacing: 0.3,
   },
   nextActivityText: {
     ...textStyles.bodyLarge,
     color: colors.primary[800],
     marginTop: spacing.sm,
+    lineHeight: 24,
   },
   pollInsightCard: {
     marginTop: spacing.base,
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    backgroundColor: colors.surface.cardHover,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    backgroundColor: colors.surface.backgroundAlt,
   },
   pollInsightLabel: {
     ...textStyles.label,
@@ -1086,13 +1101,13 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xs,
   },
+
+  // Voice reflection
   voiceDisabledCard: {
     marginTop: spacing.base,
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.cardHover,
+    backgroundColor: colors.surface.backgroundAlt,
     gap: spacing.sm,
   },
   voiceDisabledTitle: {
@@ -1128,9 +1143,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.base,
     minHeight: 160,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.card,
+    backgroundColor: colors.surface.backgroundAlt,
     padding: spacing.base,
     ...textStyles.bodyMedium,
     color: colors.text.primary,
@@ -1139,9 +1152,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.base,
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.cardHover,
+    backgroundColor: colors.surface.backgroundAlt,
     gap: spacing.base,
   },
   reflectionPlanHeader: {
@@ -1163,6 +1174,7 @@ const styles = StyleSheet.create({
   reflectionPlanSummary: {
     ...textStyles.bodyMedium,
     color: colors.text.primary,
+    lineHeight: 22,
   },
   reflectionActionList: {
     gap: spacing.base,
@@ -1183,6 +1195,7 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.secondary,
     marginTop: spacing.xxs,
+    lineHeight: 18,
   },
   reflectionActionMeta: {
     ...textStyles.caption,
@@ -1205,6 +1218,8 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 240,
   },
+
+  // Peak confusion list
   list: {
     gap: spacing.base,
     marginTop: spacing.base,
@@ -1215,9 +1230,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    backgroundColor: colors.surface.cardHover,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    backgroundColor: colors.surface.backgroundAlt,
   },
   indexBubble: {
     width: 32,
@@ -1244,6 +1257,8 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xxs,
   },
+
+  // Cluster cards
   clusterList: {
     gap: spacing.base,
     marginTop: spacing.base,
@@ -1251,9 +1266,7 @@ const styles = StyleSheet.create({
   clusterCard: {
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.cardHover,
+    backgroundColor: colors.surface.backgroundAlt,
     gap: spacing.sm,
   },
   clusterHeader: {
@@ -1270,11 +1283,15 @@ const styles = StyleSheet.create({
   clusterSummary: {
     ...textStyles.bodyMedium,
     color: colors.text.secondary,
+    lineHeight: 22,
   },
   clusterMeta: {
     ...textStyles.bodySmall,
     color: colors.text.tertiary,
+    fontStyle: "italic",
   },
+
+  // Reason chips
   reasonChipWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1285,28 +1302,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface.cardHover,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    backgroundColor: colors.primary[50],
   },
   reasonChipText: {
     ...textStyles.bodySmall,
-    color: colors.text.primary,
+    color: colors.primary[700],
     fontWeight: "600",
   },
   reasonChipCount: {
     ...textStyles.caption,
-    color: colors.text.secondary,
+    color: colors.primary[500],
+    fontWeight: "700",
   },
+
+  // Intervention stats
   interventionRow: {
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.cardHover,
+    backgroundColor: colors.surface.backgroundAlt,
     gap: spacing.sm,
   },
   interventionHeader: {
@@ -1338,7 +1354,10 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.tertiary,
     marginTop: spacing.base,
+    fontStyle: "italic",
   },
+
+  // Error state
   errorState: {
     flex: 1,
     padding: spacing.xl,

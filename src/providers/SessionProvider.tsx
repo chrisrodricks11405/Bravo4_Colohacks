@@ -7,6 +7,11 @@ import React, {
 } from "react";
 import { AppState } from "react-native";
 import { getPersistedSession } from "../services/session";
+import {
+  addMonitoringBreadcrumb,
+  captureMonitoringException,
+  setMonitoringSession,
+} from "../lib/monitoring";
 import { useDatabaseReady } from "./DatabaseProvider";
 import { useNetworkStore, useSessionStore } from "../stores";
 
@@ -36,12 +41,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try {
       const persisted = await getPersistedSession();
       setSession(persisted);
+      setMonitoringSession(persisted);
 
       if (persisted) {
         setMode(persisted.mode === "offline" ? "local_hotspot" : "online");
       }
     } catch (error) {
       console.error("Failed to hydrate session state:", error);
+      captureMonitoringException(error, {
+        component: "SessionProvider.refreshSession",
+      });
       setSession(null);
     } finally {
       setIsHydrating(false);
@@ -58,6 +67,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (status) => {
+      addMonitoringBreadcrumb({
+        category: "app-state",
+        message: `App state changed to ${status}`,
+      });
       if (status === "active") {
         void refreshSession();
       }

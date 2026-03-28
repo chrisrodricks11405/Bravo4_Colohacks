@@ -813,6 +813,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing["3xl"],
     gap: spacing.lg,
   },
+
+  // Header
   header: {
     gap: spacing.md,
   },
@@ -822,19 +824,26 @@ const styles = StyleSheet.create({
   title: {
     ...textStyles.displayMedium,
     color: colors.text.primary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     ...textStyles.bodyLarge,
     color: colors.text.secondary,
+    lineHeight: 24,
   },
   headerBadges: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
   },
+
+  // Cards
   card: {
     gap: spacing.lg,
+    borderRadius: borderRadius["2xl"],
   },
+
+  // Range selector
   rangeHeader: {
     gap: spacing.base,
   },
@@ -850,13 +859,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface.borderLight,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    backgroundColor: colors.surface.backgroundAlt,
   },
   rangeButtonActive: {
-    backgroundColor: colors.primary[50],
-    borderColor: colors.primary[200],
+    backgroundColor: colors.primary[600],
   },
   rangeButtonText: {
     ...textStyles.bodyMedium,
@@ -864,8 +870,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   rangeButtonTextActive: {
-    color: colors.primary[700],
+    color: colors.text.inverse,
   },
+
+  // Custom range
   customRangePanel: {
     gap: spacing.base,
   },
@@ -885,10 +893,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   input: {
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.surface.background,
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.surface.backgroundAlt,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     color: colors.text.primary,
@@ -901,6 +907,8 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.secondary,
   },
+
+  // Loading
   loadingState: {
     alignItems: "center",
     justifyContent: "center",
@@ -911,18 +919,23 @@ const styles = StyleSheet.create({
     ...textStyles.bodyMedium,
     color: colors.text.secondary,
   },
+
+  // Error
   errorCard: {
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
+    backgroundColor: colors.status.errorBg,
+    borderRadius: borderRadius.xl,
   },
   errorTitle: {
     ...textStyles.headingSmall,
     color: "#991B1B",
+    fontWeight: "700",
   },
   errorText: {
     ...textStyles.bodyMedium,
     color: "#991B1B",
   },
+
+  // Empty
   emptyTitle: {
     ...textStyles.headingSmall,
     color: colors.text.primary,
@@ -932,6 +945,8 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.sm,
   },
+
+  // Metrics grid
   metricsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -940,10 +955,13 @@ const styles = StyleSheet.create({
   metricCard: {
     flexGrow: 1,
     flexBasis: 160,
+    borderRadius: borderRadius.xl,
   },
   metricLabel: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
   },
   metricValue: {
     ...textStyles.displayMedium,
@@ -955,9 +973,12 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginTop: spacing.sm,
   },
+
+  // AI Coaching card (dark)
   coachingCard: {
     backgroundColor: colors.dark.surface,
-    borderColor: colors.dark.surfaceLight,
+    borderRadius: borderRadius["2xl"],
+    ...shadows.lg,
   },
   coachingHeader: {
     flexDirection: "row",
@@ -969,14 +990,17 @@ const styles = StyleSheet.create({
   coachingEyebrow: {
     ...textStyles.label,
     color: colors.primary[200],
+    letterSpacing: 0.4,
   },
   coachingTitle: {
     ...textStyles.headingLarge,
     color: colors.text.inverse,
+    letterSpacing: -0.2,
   },
   coachingNarrative: {
     ...textStyles.bodyLarge,
     color: colors.dark.text,
+    lineHeight: 26,
   },
   coachingGrid: {
     flexDirection: "row",
@@ -1027,6 +1051,8 @@ const styles = StyleSheet.create({
     ...textStyles.bodyMedium,
     color: colors.dark.text,
   },
+
+  // Card headers
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1037,13 +1063,17 @@ const styles = StyleSheet.create({
   cardTitle: {
     ...textStyles.headingLarge,
     color: colors.text.primary,
+    letterSpacing: -0.2,
   },
   cardDescription: {
     ...textStyles.bodyMedium,
     color: colors.text.secondary,
     marginTop: spacing.xs,
     maxWidth: 620,
+    lineHeight: 22,
   },
+
+  // Topic difficulty heatmap
   topicLegend: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1077,6 +1107,7 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     fontWeight: "700",
     textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   topicCellTopic: {
     ...textStyles.headingSmall,
@@ -1092,6 +1123,8 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     fontWeight: "600",
   },
+
+  // Class period heatmap
   heatmapTable: {
     gap: spacing.sm,
   },
@@ -1139,6 +1172,8 @@ const styles = StyleSheet.create({
   heatmapMeta: {
     ...textStyles.caption,
   },
+
+  // List blocks
   listBlock: {
     gap: spacing.base,
   },
@@ -1149,9 +1184,7 @@ const styles = StyleSheet.create({
     gap: spacing.base,
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.background,
+    backgroundColor: colors.surface.backgroundAlt,
   },
   listRowCopy: {
     flex: 1,
@@ -1166,13 +1199,13 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.secondary,
   },
+
+  // Intervention trend rows
   interventionRow: {
     gap: spacing.sm,
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.background,
+    backgroundColor: colors.surface.backgroundAlt,
   },
   interventionRowTop: {
     flexDirection: "row",
@@ -1193,11 +1226,13 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.secondary,
   },
+
+  // Progress bars
   progressTrack: {
     width: "100%",
-    height: 10,
+    height: 8,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface.borderLight,
+    backgroundColor: colors.surface.backgroundAlt,
     overflow: "hidden",
   },
   progressFill: {
@@ -1208,6 +1243,8 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.secondary,
   },
+
+  // Language friction trend
   languageTrendRow: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -1222,14 +1259,14 @@ const styles = StyleSheet.create({
   languageBarTrack: {
     width: "100%",
     height: 112,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.surface.borderLight,
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.surface.backgroundAlt,
     justifyContent: "flex-end",
     overflow: "hidden",
   },
   languageBarFill: {
     width: "100%",
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
   },
   languageBarValue: {
     ...textStyles.caption,
@@ -1241,6 +1278,8 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     textAlign: "center",
   },
+
+  // Subject comprehension
   subjectRow: {
     gap: spacing.sm,
   },

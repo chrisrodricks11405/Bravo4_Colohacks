@@ -31,9 +31,13 @@ export function StateScreen({
             size="large"
             color={isDark ? colors.text.inverse : colors.primary[600]}
             style={styles.spinner}
+            accessibilityLabel="Loading"
           />
         ) : null}
-        <Text style={[styles.title, { color: isDark ? colors.text.inverse : colors.text.primary }]}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.title, { color: isDark ? colors.text.inverse : colors.text.primary }]}
+        >
           {title}
         </Text>
         {message ? (

@@ -28,6 +28,7 @@ import { Badge, BottomSheet, Button, Card, StatusChip } from "../../src/componen
 import { useLiveDashboard } from "../../src/hooks/useLiveDashboard";
 import { useLivePolls } from "../../src/hooks/useLivePolls";
 import { useAudioPlayback } from "../../src/hooks/useAudioPlayback";
+import { Sentry } from "../../src/lib/monitoring";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useSessionHydration } from "../../src/providers";
 import { aiProvider, getPersistedSession, voiceProvider } from "../../src/services";
@@ -1103,6 +1104,7 @@ export default function LiveDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <Sentry.TimeToInitialDisplay record />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1553,6 +1555,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing["3xl"],
     gap: spacing.xl,
   },
+
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1572,6 +1576,7 @@ const styles = StyleSheet.create({
   title: {
     ...textStyles.displayMedium,
     color: colors.text.primary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     ...textStyles.bodyLarge,
@@ -1584,20 +1589,20 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: spacing.sm,
     flexWrap: "wrap",
-    maxWidth: 620,
+    maxWidth: 640,
   },
   headerPill: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface.card,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    backgroundColor: colors.surface.backgroundAlt,
+    ...shadows.sm,
   },
   headerPillLabel: {
     ...textStyles.caption,
     color: colors.text.tertiary,
     textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   headerPillValue: {
     ...textStyles.bodySmall,
@@ -1608,8 +1613,11 @@ const styles = StyleSheet.create({
   endButton: {
     minWidth: 150,
   },
+
+  // Alerts
   alertCard: {
-    borderColor: colors.status.warningBg,
+    backgroundColor: colors.status.warningBg,
+    borderRadius: borderRadius["2xl"],
   },
   alertTitle: {
     ...textStyles.headingSmall,
@@ -1620,6 +1628,8 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xs,
   },
+
+  // Primary grid (Pulse + Summary)
   primaryGrid: {
     flexDirection: "row",
     gap: spacing.xl,
@@ -1631,10 +1641,12 @@ const styles = StyleSheet.create({
   pulseCard: {
     flex: 1.2,
     minWidth: 360,
+    borderRadius: borderRadius["2xl"],
   },
   summaryCard: {
     flex: 1,
     minWidth: 320,
+    borderRadius: borderRadius["2xl"],
   },
   sectionTitle: {
     ...textStyles.headingSmall,
@@ -1651,6 +1663,8 @@ const styles = StyleSheet.create({
     gap: spacing.base,
     marginTop: spacing.lg,
   },
+
+  // Secondary grid (Trend + Side rail)
   secondaryGrid: {
     flexDirection: "row",
     gap: spacing.xl,
@@ -1662,32 +1676,33 @@ const styles = StyleSheet.create({
   trendCard: {
     flex: 1.25,
     minWidth: 360,
+    borderRadius: borderRadius["2xl"],
   },
   sideRail: {
     flex: 0.9,
     minWidth: 320,
     gap: spacing.xl,
   },
+
+  // Hero confusion card
   heroCard: {
     minHeight: 260,
+    borderRadius: borderRadius["2xl"],
   },
   heroStable: {
     backgroundColor: "#ECFDF5",
-    borderColor: "#A7F3D0",
   },
   heroStableValue: {
     color: "#065F46",
   },
   heroWarning: {
     backgroundColor: "#FFFBEB",
-    borderColor: "#FCD34D",
   },
   heroWarningValue: {
     color: "#92400E",
   },
   heroDanger: {
     backgroundColor: "#FEF2F2",
-    borderColor: "#FECACA",
   },
   heroDangerValue: {
     color: "#991B1B",
@@ -1701,6 +1716,7 @@ const styles = StyleSheet.create({
   heroKicker: {
     ...textStyles.label,
     color: colors.text.secondary,
+    letterSpacing: 0.3,
   },
   heroValue: {
     ...textStyles.metric,
@@ -1715,6 +1731,7 @@ const styles = StyleSheet.create({
     ...textStyles.bodyMedium,
     color: colors.text.secondary,
     marginTop: spacing.sm,
+    lineHeight: 22,
   },
   heroStats: {
     flexDirection: "row",
@@ -1731,14 +1748,18 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.text.tertiary,
     textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   heroStatValue: {
     ...textStyles.headingMedium,
     color: colors.text.primary,
     marginTop: spacing.xs,
   },
+
+  // Cluster radar card
   clusterCard: {
     gap: spacing.lg,
+    borderRadius: borderRadius["2xl"],
   },
   clusterHeader: {
     gap: spacing.base,
@@ -1746,13 +1767,12 @@ const styles = StyleSheet.create({
   watchBlock: {
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    backgroundColor: colors.surface.cardHover,
-    borderWidth: 1,
-    borderColor: colors.surface.borderLight,
+    backgroundColor: colors.surface.backgroundAlt,
   },
   watchLabel: {
     ...textStyles.label,
     color: colors.text.secondary,
+    letterSpacing: 0.3,
   },
   watchValue: {
     ...textStyles.headingMedium,
@@ -1763,6 +1783,7 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.secondary,
     marginTop: spacing.sm,
+    lineHeight: 18,
   },
   clusterActionRow: {
     flexDirection: "row",
@@ -1775,8 +1796,11 @@ const styles = StyleSheet.create({
   clusterActionSecondary: {
     minWidth: 156,
   },
+
+  // Quick actions card
   actionsCard: {
     gap: spacing.lg,
+    borderRadius: borderRadius["2xl"],
   },
   actionsHeader: {
     flexDirection: "row",
@@ -1796,6 +1820,7 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.dark.textSecondary,
     textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   timerBadgeValue: {
     ...textStyles.headingMedium,
@@ -1810,6 +1835,8 @@ const styles = StyleSheet.create({
   actionButton: {
     minWidth: 210,
   },
+
+  // Intervention grid
   interventionGrid: {
     flexDirection: "row",
     gap: spacing.xl,
@@ -1818,12 +1845,15 @@ const styles = StyleSheet.create({
   interventionGridCompact: {
     flexDirection: "column",
   },
+
+  // Bottom sheet
   sheetContent: {
     flex: 1,
   },
   sheetTitle: {
     ...textStyles.headingLarge,
     color: colors.text.primary,
+    letterSpacing: -0.2,
   },
   sheetDescription: {
     ...textStyles.bodyMedium,
@@ -1837,9 +1867,8 @@ const styles = StyleSheet.create({
   markerOption: {
     padding: spacing.base,
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.cardHover,
+    backgroundColor: colors.surface.backgroundAlt,
+    ...shadows.sm,
   },
   markerOptionTitle: {
     ...textStyles.headingSmall,

@@ -1,6 +1,13 @@
 import * as Linking from "expo-linking";
 import { getDatabase } from "../db";
 import { supabase, hasSupabaseConfig } from "../lib/supabase";
+import {
+  createSessionAccessTokenPair,
+  extractSessionAccessToken,
+  hashSessionAccessToken,
+} from "../lib/security";
+import { addMonitoringBreadcrumb, captureMonitoringException } from "../lib/monitoring";
+import { sanitizeSessionField } from "../lib/sanitization";
 import { queueSyncJob } from "./syncJobs";
 import type { SessionCreatePayload, SessionMeta, SessionStatus, SyncJobType } from "../types";
 import { upsertRecentSessions } from "./recentSessions";
@@ -10,6 +17,8 @@ type ActiveSessionRow = {
   teacher_id: string;
   join_code: string;
   qr_payload: string;
+  session_access_token: string | null;
+  session_access_token_hash: string | null;
   subject: string;
   topic: string;
   grade_class: string;
@@ -59,6 +68,8 @@ const UPSERT_ACTIVE_SESSION_SQL = `
     teacher_id,
     join_code,
     qr_payload,
+    session_access_token,
+    session_access_token_hash,
     subject,
     topic,
     grade_class,
@@ -73,11 +84,13 @@ const UPSERT_ACTIVE_SESSION_SQL = `
     ended_at,
     locked_at
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     teacher_id = excluded.teacher_id,
     join_code = excluded.join_code,
     qr_payload = excluded.qr_payload,
+    session_access_token = excluded.session_access_token,
+    session_access_token_hash = excluded.session_access_token_hash,
     subject = excluded.subject,
     topic = excluded.topic,
     grade_class = excluded.grade_class,
@@ -128,11 +141,17 @@ function generateId(prefix: string) {
     .slice(2, 10)}`;
 }
 
-function buildJoinUrl(sessionId: string, joinCode: string, mode: "online" | "offline") {
+function buildJoinUrl(
+  sessionId: string,
+  joinCode: string,
+  mode: "online" | "offline",
+  accessToken?: string
+) {
   const queryParams = {
     sessionId,
     code: joinCode,
     mode,
+    ...(accessToken ? { token: accessToken } : {}),
   };
 
   if (joinBaseUrl) {
@@ -150,6 +169,9 @@ function normalizeSession(row: ActiveSessionRow): SessionMeta {
     teacherId: row.teacher_id,
     joinCode: row.join_code,
     qrPayload: row.qr_payload,
+    accessToken:
+      row.session_access_token ?? extractSessionAccessToken(row.qr_payload) ?? undefined,
+    accessTokenHash: row.session_access_token_hash ?? undefined,
     subject: row.subject,
     topic: row.topic,
     gradeClass: row.grade_class,
@@ -198,6 +220,9 @@ function normalizeRemoteSession(row: UnknownRow): SessionMeta | null {
     teacherId,
     joinCode,
     qrPayload,
+    accessToken: extractSessionAccessToken(qrPayload) ?? undefined,
+    accessTokenHash:
+      readString(row, "access_token_hash", "accessTokenHash") ?? undefined,
     subject,
     topic,
     gradeClass,
@@ -239,6 +264,7 @@ function sessionToRemoteRow(session: SessionMeta) {
     teacher_id: session.teacherId,
     join_code: session.joinCode,
     qr_payload: session.qrPayload,
+    access_token_hash: session.accessTokenHash ?? null,
     subject: session.subject,
     topic: session.topic,
     grade_class: session.gradeClass,
@@ -265,6 +291,8 @@ async function persistActiveSession(session: SessionMeta) {
     session.teacherId,
     session.joinCode,
     session.qrPayload,
+    session.accessToken ?? null,
+    session.accessTokenHash ?? null,
     session.subject,
     session.topic,
     session.gradeClass,
@@ -300,6 +328,38 @@ async function syncSessionToSupabase(session: SessionMeta) {
   if (error) {
     throw error;
   }
+}
+
+async function getAuthenticatedTeacherId() {
+  if (!hasSupabaseConfig) {
+    return null;
+  }
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    throw error;
+  }
+
+  return user?.id ?? null;
+}
+
+async function ensureSessionAccess(session: SessionMeta) {
+  const accessToken =
+    session.accessToken ?? extractSessionAccessToken(session.qrPayload) ?? undefined;
+
+  if (accessToken) {
+    return {
+      accessToken,
+      accessTokenHash:
+        session.accessTokenHash ?? (await hashSessionAccessToken(accessToken)),
+    };
+  }
+
+  return createSessionAccessTokenPair();
 }
 
 async function isJoinCodeTaken(joinCode: string, ignoreSessionId?: string) {
@@ -425,23 +485,36 @@ export async function createSession(
   const joinCode = await generateUniqueJoinCode();
   const id = generateId("session");
   const createdAt = new Date().toISOString();
+  const { accessToken, accessTokenHash } = await createSessionAccessTokenPair();
 
   const session: SessionMeta = {
     id,
     teacherId: options.teacherId,
     joinCode,
-    qrPayload: buildJoinUrl(id, joinCode, payload.mode),
-    subject: payload.subject.trim(),
-    topic: payload.topic.trim(),
-    gradeClass: payload.gradeClass.trim(),
-    language: payload.language.trim(),
+    qrPayload: buildJoinUrl(id, joinCode, payload.mode, accessToken),
+    accessToken,
+    accessTokenHash,
+    subject: sanitizeSessionField(payload.subject, 60),
+    topic: sanitizeSessionField(payload.topic, 120),
+    gradeClass: sanitizeSessionField(payload.gradeClass, 40),
+    language: sanitizeSessionField(payload.language, 40),
     lostThreshold: payload.lostThreshold,
     mode: payload.mode,
-    lessonPlanSeed: payload.lessonPlanSeed?.trim() || undefined,
+    lessonPlanSeed: sanitizeSessionField(payload.lessonPlanSeed, 500) || undefined,
     status: "lobby",
     participantCount: 0,
     createdAt,
   };
+
+  addMonitoringBreadcrumb({
+    category: "session",
+    message: "Teacher session created.",
+    data: {
+      sessionId: session.id,
+      mode: session.mode,
+      status: session.status,
+    },
+  });
 
   return saveSessionState(session, {
     ...options,
@@ -454,10 +527,42 @@ export async function updateSession(
   updates: Partial<SessionMeta>,
   options: SessionMutationOptions = {}
 ): Promise<SessionMeta> {
+  const access = await ensureSessionAccess({
+    ...session,
+    ...updates,
+  });
   const nextSession: SessionMeta = {
     ...session,
     ...updates,
+    accessToken: access.accessToken,
+    accessTokenHash: access.accessTokenHash,
+    subject:
+      updates.subject != null ? sanitizeSessionField(updates.subject, 60) : session.subject,
+    topic:
+      updates.topic != null ? sanitizeSessionField(updates.topic, 120) : session.topic,
+    gradeClass:
+      updates.gradeClass != null
+        ? sanitizeSessionField(updates.gradeClass, 40)
+        : session.gradeClass,
+    language:
+      updates.language != null
+        ? sanitizeSessionField(updates.language, 40)
+        : session.language,
+    lessonPlanSeed:
+      updates.lessonPlanSeed !== undefined
+        ? sanitizeSessionField(updates.lessonPlanSeed, 500) || undefined
+        : session.lessonPlanSeed,
   };
+
+  addMonitoringBreadcrumb({
+    category: "session",
+    message: "Teacher session updated.",
+    data: {
+      sessionId: nextSession.id,
+      status: nextSession.status,
+      mode: nextSession.mode,
+    },
+  });
 
   return saveSessionState(nextSession, {
     ...options,
@@ -483,12 +588,15 @@ export async function regenerateSessionJoinCode(
   options: SessionMutationOptions = {}
 ) {
   const joinCode = await generateUniqueJoinCode(session.id);
+  const access = await ensureSessionAccess(session);
 
   return updateSession(
     session,
     {
       joinCode,
-      qrPayload: buildJoinUrl(session.id, joinCode, session.mode),
+      accessToken: access.accessToken,
+      accessTokenHash: access.accessTokenHash,
+      qrPayload: buildJoinUrl(session.id, joinCode, session.mode, access.accessToken),
     },
     options
   );
@@ -498,6 +606,12 @@ export async function beginLiveSession(
   session: SessionMeta,
   options: SessionMutationOptions = {}
 ) {
+  addMonitoringBreadcrumb({
+    category: "session",
+    message: "Teacher session moved to live status.",
+    data: { sessionId: session.id },
+  });
+
   return updateSession(
     session,
     {
@@ -527,6 +641,14 @@ export async function endLiveSession(
   options: SessionMutationOptions = {}
 ) {
   const confusionIndexAvg = await getAverageSessionConfusionIndex(session.id);
+  addMonitoringBreadcrumb({
+    category: "session",
+    message: "Teacher session ended.",
+    data: {
+      sessionId: session.id,
+      confusionIndexAvg,
+    },
+  });
 
   return saveSessionState(
     {
@@ -564,13 +686,17 @@ export async function fetchRemoteSession(sessionId: string): Promise<SessionMeta
     return null;
   }
 
-  const { data, error } = await supabase
-    .from(sessionsTable)
-    .select("*")
-    .eq("id", sessionId)
-    .maybeSingle();
+  const teacherId = await getAuthenticatedTeacherId();
+  const query = supabase.from(sessionsTable).select("*").eq("id", sessionId);
+  const { data, error } = teacherId
+    ? await query.eq("teacher_id", teacherId).maybeSingle()
+    : await query.maybeSingle();
 
   if (error) {
+    captureMonitoringException(error, {
+      component: "session.fetchRemoteSession",
+      data: { sessionId },
+    });
     throw error;
   }
 
@@ -595,6 +721,10 @@ export function subscribeToSessionLobby(
       const count = await countSessionParticipants(sessionId);
       callbacks.onParticipantCount?.(count);
     } catch (error) {
+      captureMonitoringException(error, {
+        component: "session.subscribeToSessionLobby.refreshParticipants",
+        data: { sessionId },
+      });
       callbacks.onError?.(
         error instanceof Error ? error.message : "Unable to refresh join count."
       );

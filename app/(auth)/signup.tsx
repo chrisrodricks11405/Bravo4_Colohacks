@@ -14,6 +14,19 @@ import { Badge, Button, Card } from "../../src/components/ui";
 import { useAuth } from "../../src/providers";
 import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
 
+function getPasswordStrength(pw: string) {
+  if (!pw) return 0;
+  let score = 0;
+  if (pw.length >= 6) score++;
+  if (pw.length >= 8) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/\d/.test(pw) || /[^a-zA-Z0-9]/.test(pw)) score++;
+  return score;
+}
+
+const strengthColors = ["#E2E8F0", "#EF4444", "#F59E0B", "#F59E0B", "#10B981"];
+const strengthLabels = ["", "Weak", "Fair", "Good", "Strong"];
+
 export default function SignUpScreen() {
   const router = useRouter();
   const { signUp, isConfigured } = useAuth();
@@ -24,6 +37,8 @@ export default function SignUpScreen() {
   const [isSigningUp, setIsSigningUp] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const strength = getPasswordStrength(password);
 
   const handleSignUp = async () => {
     if (!isConfigured) {
@@ -47,14 +62,10 @@ export default function SignUpScreen() {
 
     try {
       await signUp(email, password);
-      setSuccessMessage(
-        "Account created! Check your email to confirm, then sign in."
-      );
+      setSuccessMessage("Account created! Check your email to confirm, then sign in.");
     } catch (error) {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Sign-up failed. Please try again."
+        error instanceof Error ? error.message : "Sign-up failed. Please try again."
       );
     } finally {
       setIsSigningUp(false);
@@ -68,114 +79,146 @@ export default function SignUpScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.content}>
+          {/* Left Branding Panel */}
           <View style={styles.brandPanel}>
-            <Badge label="Teacher Workspace" variant="primary" size="md" style={styles.brandBadge} />
-            <Text style={styles.title}>ClassPulse AI</Text>
-            <Text style={styles.subtitle}>
-              Create your teacher account to start running live classroom sessions with real-time AI insights.
-            </Text>
+            <View style={styles.brandTop}>
+              <Text style={styles.brandIcon}>✦</Text>
+              <Text style={styles.brandName}>ClassPulse AI</Text>
+            </View>
 
-            <View style={styles.highlights}>
-              <View style={styles.highlightItem}>
-                <Text style={styles.highlightTitle}>Real-time engagement</Text>
-                <Text style={styles.highlightText}>
-                  Monitor student understanding with live pulse checks, polls, and AI-powered question clustering.
-                </Text>
-              </View>
-              <View style={styles.highlightItem}>
-                <Text style={styles.highlightTitle}>AI-powered insights</Text>
-                <Text style={styles.highlightText}>
-                  Get automatic session summaries, misconception detection, and intervention suggestions.
-                </Text>
+            <View style={styles.brandCenter}>
+              <Text style={styles.headline}>
+                SEE EVERY STUDENT,{"\n"}NOT JUST THE{"\n"}LOUD ONES.
+              </Text>
+
+              <View style={styles.featurePills}>
+                <View style={styles.featurePill}>
+                  <View style={styles.featurePillIcon}>
+                    <Text style={styles.featurePillIconText}>📊</Text>
+                  </View>
+                  <Text style={styles.featurePillText}>Real-time engagement heatmaps</Text>
+                </View>
+                <View style={styles.featurePill}>
+                  <View style={[styles.featurePillIcon, styles.featurePillIconAlt]}>
+                    <Text style={styles.featurePillIconText}>✨</Text>
+                  </View>
+                  <Text style={styles.featurePillText}>AI-powered teaching insights</Text>
+                </View>
               </View>
             </View>
           </View>
 
-          <Card variant="default" padding="lg" style={styles.formCard}>
-            <Text style={styles.formTitle}>Create account</Text>
-            <Text style={styles.formSubtitle}>
-              Sign up with your email and password.
-            </Text>
+          {/* Right Form Panel */}
+          <View style={styles.formPanel}>
+            <View style={styles.formContainer}>
+              <Card variant="elevated" padding="xl" style={styles.formCard}>
+                <Text style={styles.formTitle}>Create Account</Text>
+                <Text style={styles.formSubtitle}>Get started in 30 seconds.</Text>
 
-            {!isConfigured ? (
-              <View style={styles.notice}>
-                <Badge label="Supabase setup required" variant="warning" size="md" />
-                <Text style={styles.noticeText}>
-                  `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are still using placeholders.
-                </Text>
-              </View>
-            ) : null}
+                {!isConfigured ? (
+                  <View style={styles.notice}>
+                    <Badge label="Supabase setup required" variant="warning" size="md" />
+                    <Text style={styles.noticeText}>
+                      Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env
+                    </Text>
+                  </View>
+                ) : null}
 
-            {errorMessage ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{errorMessage}</Text>
-              </View>
-            ) : null}
+                {errorMessage ? (
+                  <View style={styles.errorBox}>
+                    <Text style={styles.errorText}>{errorMessage}</Text>
+                  </View>
+                ) : null}
 
-            {successMessage ? (
-              <View style={styles.successBox}>
-                <Text style={styles.successText}>{successMessage}</Text>
-              </View>
-            ) : null}
+                {successMessage ? (
+                  <View style={styles.successBox}>
+                    <Text style={styles.successText}>{successMessage}</Text>
+                  </View>
+                ) : null}
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Email</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="teacher@school.org"
-                placeholderTextColor={colors.text.tertiary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                style={styles.input}
-              />
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="teacher@school.org"
+                    placeholderTextColor={colors.text.tertiary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="At least 6 characters"
+                    placeholderTextColor={colors.text.tertiary}
+                    secureTextEntry
+                    style={styles.input}
+                  />
+                  {password.length > 0 && (
+                    <View style={styles.strengthRow}>
+                      {[1, 2, 3, 4].map((i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.strengthBar,
+                            {
+                              backgroundColor:
+                                i <= strength ? strengthColors[strength] : "#E2E8F0",
+                            },
+                          ]}
+                        />
+                      ))}
+                      <Text
+                        style={[
+                          styles.strengthLabel,
+                          { color: strengthColors[strength] },
+                        ]}
+                      >
+                        {strengthLabels[strength]}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Confirm Password</Text>
+                  <TextInput
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Re-enter your password"
+                    placeholderTextColor={colors.text.tertiary}
+                    secureTextEntry
+                    style={styles.input}
+                  />
+                </View>
+
+                <Button
+                  title="Create Account"
+                  onPress={handleSignUp}
+                  loading={isSigningUp}
+                  disabled={!email.trim() || !password || !confirmPassword}
+                  size="lg"
+                  fullWidth
+                />
+
+                <TouchableOpacity
+                  onPress={() => router.replace("/(auth)/login")}
+                  style={styles.switchLink}
+                >
+                  <Text style={styles.switchText}>
+                    Already have an account?{" "}
+                    <Text style={styles.switchTextBold}>Sign in</Text>
+                  </Text>
+                </TouchableOpacity>
+              </Card>
             </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Password</Text>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="At least 6 characters"
-                placeholderTextColor={colors.text.tertiary}
-                secureTextEntry
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Confirm password</Text>
-              <TextInput
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Re-enter your password"
-                placeholderTextColor={colors.text.tertiary}
-                secureTextEntry
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.buttonStack}>
-              <Button
-                title="Create Account"
-                onPress={handleSignUp}
-                loading={isSigningUp}
-                disabled={!email.trim() || !password || !confirmPassword}
-                size="lg"
-                fullWidth
-              />
-            </View>
-
-            <TouchableOpacity
-              onPress={() => router.replace("/(auth)/login")}
-              style={styles.switchLink}
-            >
-              <Text style={styles.switchText}>
-                Already have an account? <Text style={styles.switchTextBold}>Sign in</Text>
-              </Text>
-            </TouchableOpacity>
-          </Card>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -192,56 +235,89 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: spacing.xl,
     flexDirection: "row",
-    gap: spacing.xl,
   },
   brandPanel: {
-    flex: 1.15,
-    justifyContent: "center",
-    paddingRight: spacing.xl,
+    flex: 1,
+    paddingHorizontal: spacing["3xl"],
+    paddingVertical: spacing["2xl"],
+    justifyContent: "space-between",
   },
-  brandBadge: {
-    alignSelf: "flex-start",
-    marginBottom: spacing.lg,
+  brandTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
-  title: {
-    ...textStyles.displayLarge,
+  brandIcon: {
+    fontSize: 20,
+    color: colors.primary[400],
+  },
+  brandName: {
+    ...textStyles.bodyMedium,
     color: colors.text.inverse,
-    marginBottom: spacing.base,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
-  subtitle: {
-    ...textStyles.bodyLarge,
-    color: colors.dark.textSecondary,
+  brandCenter: {
+    flex: 1,
+    justifyContent: "center",
     maxWidth: 520,
   },
-  highlights: {
-    marginTop: spacing["2xl"],
-    gap: spacing.base,
-  },
-  highlightItem: {
-    backgroundColor: colors.dark.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.dark.surfaceLight,
-  },
-  highlightTitle: {
-    ...textStyles.headingSmall,
+  headline: {
+    fontSize: 40,
+    fontWeight: "700",
     color: colors.text.inverse,
-    marginBottom: spacing.xs,
+    lineHeight: 50,
+    letterSpacing: -0.5,
+    marginBottom: spacing["2xl"],
   },
-  highlightText: {
+  featurePills: {
+    gap: spacing.md,
+  },
+  featurePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.lg,
+  },
+  featurePillIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.lg,
+    backgroundColor: "rgba(108, 248, 187, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featurePillIconAlt: {
+    backgroundColor: "rgba(163, 180, 252, 0.15)",
+  },
+  featurePillIconText: {
+    fontSize: 18,
+  },
+  featurePillText: {
     ...textStyles.bodyMedium,
-    color: colors.dark.textSecondary,
+    color: "rgba(255, 255, 255, 0.75)",
+  },
+  formPanel: {
+    flex: 1,
+    backgroundColor: colors.surface.background,
+    borderTopLeftRadius: 32,
+    borderBottomLeftRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing["2xl"],
+  },
+  formContainer: {
+    width: "100%",
+    maxWidth: 440,
   },
   formCard: {
-    flex: 0.95,
-    alignSelf: "center",
-    width: "100%",
-    maxWidth: 500,
-    backgroundColor: colors.surface.card,
-    ...shadows.lg,
+    ...shadows.xl,
   },
   formTitle: {
     ...textStyles.headingLarge,
@@ -255,7 +331,7 @@ const styles = StyleSheet.create({
   },
   notice: {
     gap: spacing.sm,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   noticeText: {
     ...textStyles.bodySmall,
@@ -265,7 +341,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status.errorBg,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   errorText: {
     ...textStyles.bodySmall,
@@ -275,38 +351,51 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status.successBg,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   successText: {
     ...textStyles.bodySmall,
     color: "#065F46",
   },
   fieldGroup: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   fieldLabel: {
-    ...textStyles.label,
+    ...textStyles.bodySmall,
     color: colors.text.secondary,
+    fontWeight: "500",
     marginBottom: spacing.sm,
   },
   input: {
     minHeight: 52,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    borderWidth: 0,
     borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface.background,
+    backgroundColor: colors.surface.backgroundAlt,
     color: colors.text.primary,
     ...textStyles.bodyMedium,
   },
-  buttonStack: {
-    gap: spacing.md,
-    marginTop: spacing.md,
+  strengthRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  strengthBar: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+  },
+  strengthLabel: {
+    ...textStyles.caption,
+    fontWeight: "600",
+    marginLeft: spacing.sm,
+    minWidth: 40,
   },
   switchLink: {
     alignItems: "center",
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
   switchText: {
     ...textStyles.bodyMedium,

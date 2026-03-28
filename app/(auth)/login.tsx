@@ -84,111 +84,127 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.content}>
+          {/* Left Branding Panel */}
           <View style={styles.brandPanel}>
-            <Badge label="Teacher Workspace" variant="primary" size="md" style={styles.brandBadge} />
-            <Text style={styles.title}>ClassPulse AI</Text>
-            <Text style={styles.subtitle}>
-              Sign in with your Supabase teacher account and pick up where your last classroom left off.
-            </Text>
+            <View style={styles.brandTop}>
+              <Text style={styles.brandIcon}>✦</Text>
+              <Text style={styles.brandName}>ClassPulse AI</Text>
+            </View>
 
-            <View style={styles.highlights}>
-              <View style={styles.highlightItem}>
-                <Text style={styles.highlightTitle}>Fast classroom launch</Text>
-                <Text style={styles.highlightText}>
-                  Start live sessions, switch into offline mode, and review your synced recents from one home screen.
-                </Text>
-              </View>
-              <View style={styles.highlightItem}>
-                <Text style={styles.highlightTitle}>Settings travel with you</Text>
-                <Text style={styles.highlightText}>
-                  Default language, lost threshold, AI, and voice preferences are restored automatically.
-                </Text>
+            <View style={styles.brandCenter}>
+              <Text style={styles.headline}>
+                YOUR CLASSROOM{"\n"}RADAR, ALWAYS ON.
+              </Text>
+
+              <View style={styles.featurePills}>
+                <View style={styles.featurePill}>
+                  <View style={styles.featurePillIcon}>
+                    <Text style={styles.featurePillIconText}>⚡</Text>
+                  </View>
+                  <Text style={styles.featurePillText}>Launch a session in one tap</Text>
+                </View>
+                <View style={styles.featurePill}>
+                  <View style={[styles.featurePillIcon, styles.featurePillIconAlt]}>
+                    <Text style={styles.featurePillIconText}>☁</Text>
+                  </View>
+                  <Text style={styles.featurePillText}>Your settings travel with you</Text>
+                </View>
               </View>
             </View>
           </View>
 
-          <Card variant="default" padding="lg" style={styles.formCard}>
-            <Text style={styles.formTitle}>Teacher sign in</Text>
-            <Text style={styles.formSubtitle}>
-              Use email and password, or send yourself a magic link.
-            </Text>
+          {/* Right Form Panel */}
+          <View style={styles.formPanel}>
+            <View style={styles.formContainer}>
+              <Card variant="elevated" padding="xl" style={styles.formCard}>
+                <Text style={styles.formTitle}>Sign In</Text>
+                <Text style={styles.formSubtitle}>Welcome back, teacher.</Text>
 
-            {!isConfigured ? (
-              <View style={styles.notice}>
-                <Badge label="Supabase setup required" variant="warning" size="md" />
-                <Text style={styles.noticeText}>
-                  `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are still using placeholders.
-                </Text>
-              </View>
-            ) : null}
+                {!isConfigured ? (
+                  <View style={styles.notice}>
+                    <Badge label="Supabase setup required" variant="warning" size="md" />
+                    <Text style={styles.noticeText}>
+                      Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env
+                    </Text>
+                  </View>
+                ) : null}
 
-            {errorMessage ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{errorMessage}</Text>
-              </View>
-            ) : null}
+                {errorMessage ? (
+                  <View style={styles.errorBox}>
+                    <Text style={styles.errorText}>{errorMessage}</Text>
+                  </View>
+                ) : null}
 
-            {magicLinkMessage ? (
-              <View style={styles.successBox}>
-                <Text style={styles.successText}>{magicLinkMessage}</Text>
-              </View>
-            ) : null}
+                {magicLinkMessage ? (
+                  <View style={styles.successBox}>
+                    <Text style={styles.successText}>{magicLinkMessage}</Text>
+                  </View>
+                ) : null}
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Email</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="teacher@school.org"
-                placeholderTextColor={colors.text.tertiary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                style={styles.input}
-              />
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="name@school.edu"
+                    placeholderTextColor={colors.text.tertiary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Enter your password"
+                    placeholderTextColor={colors.text.tertiary}
+                    secureTextEntry
+                    style={styles.input}
+                  />
+                </View>
+
+                <Button
+                  title="Sign In"
+                  onPress={handlePasswordSignIn}
+                  loading={isSigningIn}
+                  disabled={!email.trim() || !password}
+                  size="lg"
+                  fullWidth
+                  style={styles.signInButton}
+                />
+
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <Button
+                  title="Send Magic Link"
+                  onPress={handleMagicLink}
+                  loading={isSendingMagicLink}
+                  disabled={!email.trim()}
+                  variant="outline"
+                  size="lg"
+                  fullWidth
+                />
+
+                <TouchableOpacity
+                  onPress={() => router.replace("/(auth)/signup")}
+                  style={styles.switchLink}
+                >
+                  <Text style={styles.switchText}>
+                    Don't have an account?{" "}
+                    <Text style={styles.switchTextBold}>Sign up</Text>
+                  </Text>
+                </TouchableOpacity>
+              </Card>
             </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Password</Text>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                placeholderTextColor={colors.text.tertiary}
-                secureTextEntry
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.buttonStack}>
-              <Button
-                title="Sign In"
-                onPress={handlePasswordSignIn}
-                loading={isSigningIn}
-                disabled={!email.trim() || !password}
-                size="lg"
-                fullWidth
-              />
-              <Button
-                title="Send Magic Link"
-                onPress={handleMagicLink}
-                loading={isSendingMagicLink}
-                disabled={!email.trim()}
-                variant="outline"
-                size="lg"
-                fullWidth
-              />
-            </View>
-
-            <TouchableOpacity
-              onPress={() => router.replace("/(auth)/signup")}
-              style={styles.switchLink}
-            >
-              <Text style={styles.switchText}>
-                Don't have an account? <Text style={styles.switchTextBold}>Create one</Text>
-              </Text>
-            </TouchableOpacity>
-          </Card>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -205,56 +221,93 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: spacing.xl,
     flexDirection: "row",
-    gap: spacing.xl,
   },
+
+  // Left brand panel
   brandPanel: {
-    flex: 1.15,
-    justifyContent: "center",
-    paddingRight: spacing.xl,
+    flex: 1,
+    paddingHorizontal: spacing["3xl"],
+    paddingVertical: spacing["2xl"],
+    justifyContent: "space-between",
   },
-  brandBadge: {
-    alignSelf: "flex-start",
-    marginBottom: spacing.lg,
+  brandTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
-  title: {
-    ...textStyles.displayLarge,
+  brandIcon: {
+    fontSize: 20,
+    color: colors.primary[400],
+  },
+  brandName: {
+    ...textStyles.bodyMedium,
     color: colors.text.inverse,
-    marginBottom: spacing.base,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
-  subtitle: {
-    ...textStyles.bodyLarge,
-    color: colors.dark.textSecondary,
+  brandCenter: {
+    flex: 1,
+    justifyContent: "center",
     maxWidth: 520,
   },
-  highlights: {
-    marginTop: spacing["2xl"],
-    gap: spacing.base,
-  },
-  highlightItem: {
-    backgroundColor: colors.dark.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.dark.surfaceLight,
-  },
-  highlightTitle: {
-    ...textStyles.headingSmall,
+  headline: {
+    fontSize: 42,
+    fontWeight: "700",
     color: colors.text.inverse,
-    marginBottom: spacing.xs,
+    lineHeight: 52,
+    letterSpacing: -0.5,
+    marginBottom: spacing["2xl"],
   },
-  highlightText: {
+  featurePills: {
+    gap: spacing.md,
+  },
+  featurePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.lg,
+  },
+  featurePillIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.lg,
+    backgroundColor: "rgba(108, 248, 187, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featurePillIconAlt: {
+    backgroundColor: "rgba(163, 180, 252, 0.15)",
+  },
+  featurePillIconText: {
+    fontSize: 18,
+  },
+  featurePillText: {
     ...textStyles.bodyMedium,
-    color: colors.dark.textSecondary,
+    color: "rgba(255, 255, 255, 0.75)",
+  },
+
+  // Right form panel
+  formPanel: {
+    flex: 1,
+    backgroundColor: colors.surface.background,
+    borderTopLeftRadius: 32,
+    borderBottomLeftRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing["2xl"],
+  },
+  formContainer: {
+    width: "100%",
+    maxWidth: 440,
   },
   formCard: {
-    flex: 0.95,
-    alignSelf: "center",
-    width: "100%",
-    maxWidth: 500,
-    backgroundColor: colors.surface.card,
-    ...shadows.lg,
+    ...shadows.xl,
   },
   formTitle: {
     ...textStyles.headingLarge,
@@ -268,7 +321,7 @@ const styles = StyleSheet.create({
   },
   notice: {
     gap: spacing.sm,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   noticeText: {
     ...textStyles.bodySmall,
@@ -278,7 +331,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status.errorBg,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   errorText: {
     ...textStyles.bodySmall,
@@ -288,38 +341,54 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status.successBg,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   successText: {
     ...textStyles.bodySmall,
     color: "#065F46",
   },
   fieldGroup: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   fieldLabel: {
-    ...textStyles.label,
+    ...textStyles.bodySmall,
     color: colors.text.secondary,
+    fontWeight: "500",
     marginBottom: spacing.sm,
   },
   input: {
     minHeight: 52,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    borderWidth: 0,
     borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface.background,
+    backgroundColor: colors.surface.backgroundAlt,
     color: colors.text.primary,
     ...textStyles.bodyMedium,
   },
-  buttonStack: {
+  signInButton: {
+    marginTop: spacing.sm,
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.md,
-    marginTop: spacing.md,
+    marginVertical: spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.surface.border,
+  },
+  dividerText: {
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 1,
   },
   switchLink: {
-    alignItems: "center" as const,
-    marginTop: spacing.lg,
+    alignItems: "center",
+    marginTop: spacing.xl,
   },
   switchText: {
     ...textStyles.bodyMedium,
@@ -327,6 +396,6 @@ const styles = StyleSheet.create({
   },
   switchTextBold: {
     color: colors.primary[600],
-    fontWeight: "600" as const,
+    fontWeight: "600",
   },
 });

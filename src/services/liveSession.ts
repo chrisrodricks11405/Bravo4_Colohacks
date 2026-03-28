@@ -1,4 +1,14 @@
 import { getDatabase } from "../db";
+import { addMonitoringBreadcrumb, captureMonitoringException } from "../lib/monitoring";
+import {
+  sanitizeAnonymousId,
+  sanitizeClusterSummary,
+  sanitizeClusterTitle,
+  sanitizeRepresentativeQuestion,
+  sanitizeStudentQuestionText,
+  sanitizeTeacherNote,
+  sanitizeText,
+} from "../lib/sanitization";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { queueSyncJob } from "./syncJobs";
 import type {
@@ -799,7 +809,7 @@ function normalizeLessonMarkerRow(row: LessonMarkerRow): LessonMarker {
     id: row.id,
     sessionId: row.session_id,
     type: normalizeLessonMarkerType(row.type),
-    label: row.label ?? undefined,
+    label: sanitizeText(row.label, { maxLength: 80 }) || undefined,
     timestamp: row.timestamp,
   };
 }
@@ -817,7 +827,7 @@ function normalizeInterventionRow(row: InterventionRow): InterventionActionPaylo
     recoveryScore: row.recovery_score ?? undefined,
     recoveryWindowSeconds: row.recovery_window_seconds,
     durationSeconds: row.duration_seconds ?? undefined,
-    notes: row.notes ?? undefined,
+    notes: sanitizeTeacherNote(row.notes) || undefined,
   };
 }
 
@@ -825,15 +835,20 @@ function normalizeClusterRow(row: ClusterRow): MisconceptionClusterSummary {
   return {
     id: row.id,
     sessionId: row.session_id,
-    title: row.title,
-    summary: row.summary,
+    title: sanitizeClusterTitle(row.title),
+    summary: sanitizeClusterSummary(row.summary),
     affectedCount: row.affected_count,
-    representativeQuestion: row.representative_question,
+    representativeQuestion: sanitizeRepresentativeQuestion(row.representative_question),
     reasonChip: row.reason_chip as MisconceptionClusterSummary["reasonChip"],
     lessonMarkerId: row.lesson_marker_id ?? undefined,
-    translation: row.translation ?? undefined,
+    translation: sanitizeText(row.translation, {
+      allowMultiline: true,
+      maxLength: 240,
+    }) || undefined,
     status: normalizeClusterStatus(row.status),
-    suggestedInterventions: parseJsonArray(row.suggested_interventions),
+    suggestedInterventions: parseJsonArray(row.suggested_interventions).map((value) =>
+      sanitizeText(value, { maxLength: 120 })
+    ),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -843,9 +858,9 @@ function normalizeQuestionRow(row: QuestionRow): AnonymousQuestionPayload {
   return {
     id: row.id,
     sessionId: row.session_id,
-    anonymousId: row.anonymous_id,
-    text: row.text,
-    language: row.language ?? undefined,
+    anonymousId: sanitizeAnonymousId(row.anonymous_id),
+    text: sanitizeStudentQuestionText(row.text),
+    language: sanitizeText(row.language, { maxLength: 24 }) || undefined,
     lessonMarkerId: row.lesson_marker_id ?? undefined,
     timestamp: row.timestamp,
   };
@@ -886,16 +901,20 @@ function normalizeRemoteCluster(row: UnknownRow): MisconceptionClusterSummary | 
   return {
     id,
     sessionId,
-    title,
-    summary,
+    title: sanitizeClusterTitle(title),
+    summary: sanitizeClusterSummary(summary),
     affectedCount: readNumber(row, "affected_count", "affectedCount") ?? 0,
-    representativeQuestion,
+    representativeQuestion: sanitizeRepresentativeQuestion(representativeQuestion),
     reasonChip:
       (readString(row, "reason_chip", "reasonChip") as MisconceptionClusterSummary["reasonChip"]) ??
       "other",
     lessonMarkerId:
       readString(row, "lesson_marker_id", "lessonMarkerId") ?? undefined,
-    translation: readString(row, "translation") ?? undefined,
+    translation:
+      sanitizeText(readString(row, "translation"), {
+        allowMultiline: true,
+        maxLength: 240,
+      }) || undefined,
     keywordAnchors: keywordAnchors.length > 0 ? keywordAnchors : undefined,
     latestQuestionAt:
       readString(row, "latest_question_at", "latestQuestionAt") ?? undefined,
@@ -906,8 +925,12 @@ function normalizeRemoteCluster(row: UnknownRow): MisconceptionClusterSummary | 
     status: normalizeClusterStatus(readString(row, "status")),
     suggestedInterventions:
       Array.isArray(suggestions)
-        ? suggestions.filter((entry): entry is string => typeof entry === "string")
-        : parseJsonArray(typeof suggestions === "string" ? suggestions : null),
+        ? suggestions
+            .filter((entry): entry is string => typeof entry === "string")
+            .map((entry) => sanitizeText(entry, { maxLength: 120 }))
+        : parseJsonArray(typeof suggestions === "string" ? suggestions : null).map((entry) =>
+            sanitizeText(entry, { maxLength: 120 })
+          ),
     createdAt,
     updatedAt,
   };
@@ -927,9 +950,9 @@ function normalizeRemoteQuestion(row: UnknownRow): AnonymousQuestionPayload | nu
   return {
     id,
     sessionId,
-    anonymousId,
-    text,
-    language: readString(row, "language") ?? undefined,
+    anonymousId: sanitizeAnonymousId(anonymousId),
+    text: sanitizeStudentQuestionText(text),
+    language: sanitizeText(readString(row, "language"), { maxLength: 24 }) || undefined,
     lessonMarkerId:
       readString(row, "lesson_marker_id", "lessonMarkerId") ?? undefined,
     timestamp: toIsoString(timestamp),
@@ -967,7 +990,7 @@ function normalizeRemoteIntervention(row: UnknownRow): InterventionActionPayload
       ) ?? 60,
     durationSeconds:
       readNumber(row, "duration_seconds", "durationSeconds") ?? undefined,
-    notes: readString(row, "notes") ?? undefined,
+    notes: sanitizeTeacherNote(readString(row, "notes")) || undefined,
   };
 }
 
@@ -1201,7 +1224,7 @@ async function persistPulseEvents(events: PulseSignalEvent[], synced = true) {
 
 async function listLocalPulseEvents(
   sessionId: string,
-  limit = 500
+  limit = 1_200
 ): Promise<PulseSignalEvent[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<LocalPulseEventRow>(
@@ -1422,12 +1445,12 @@ async function fetchParticipantRows(sessionId: string): Promise<UnknownRow[]> {
   return (data as UnknownRow[] | null) ?? [];
 }
 
-async function fetchPulseRows(sessionId: string): Promise<UnknownRow[]> {
+async function fetchPulseRows(sessionId: string, limit = 1_200): Promise<UnknownRow[]> {
   const { data, error } = await supabase
     .from(pulseEventsTable)
     .select("*")
     .eq("session_id", sessionId)
-    .limit(500);
+    .limit(limit);
 
   if (error) {
     throw error;
@@ -1627,22 +1650,29 @@ async function persistQuestionsWithSyncState(
   const syncedAt = synced ? new Date().toISOString() : null;
 
   for (const question of questions) {
+    const sanitizedQuestion = {
+      ...question,
+      anonymousId: sanitizeAnonymousId(question.anonymousId),
+      text: sanitizeStudentQuestionText(question.text),
+      language: sanitizeText(question.language, { maxLength: 24 }) || undefined,
+    };
+
     await db.runAsync(
       UPSERT_QUESTION_SQL,
-      question.id,
-      question.sessionId,
-      question.anonymousId,
-      question.text,
-      question.language ?? null,
-      question.lessonMarkerId ?? null,
-      question.timestamp,
+      sanitizedQuestion.id,
+      sanitizedQuestion.sessionId,
+      sanitizedQuestion.anonymousId,
+      sanitizedQuestion.text,
+      sanitizedQuestion.language ?? null,
+      sanitizedQuestion.lessonMarkerId ?? null,
+      sanitizedQuestion.timestamp,
       synced ? 1 : 0,
       syncedAt
     );
   }
 }
 
-function buildFallbackClusters(args: {
+export function buildFallbackClusters(args: {
   sessionId: string;
   questions: AnonymousQuestionPayload[];
   lessonMarkers: LessonMarker[];
@@ -1738,22 +1768,35 @@ function buildFallbackClusters(args: {
       return {
         id: cluster.id,
         sessionId,
-        title: buildClusterTitle(cluster.reasonChip, cluster.keywordAnchors),
-        summary: buildClusterSummary(cluster.reasonChip, cluster.keywordAnchors, affectedCount),
+        title: sanitizeClusterTitle(
+          buildClusterTitle(cluster.reasonChip, cluster.keywordAnchors)
+        ),
+        summary: sanitizeClusterSummary(
+          buildClusterSummary(cluster.reasonChip, cluster.keywordAnchors, affectedCount)
+        ),
         affectedCount,
-        representativeQuestion:
-          pickRepresentativeQuestion(cluster.questions) ?? cluster.questions[0]?.text ?? "",
+        representativeQuestion: sanitizeRepresentativeQuestion(
+          pickRepresentativeQuestion(cluster.questions) ?? cluster.questions[0]?.text ?? ""
+        ),
         reasonChip: cluster.reasonChip,
         lessonMarkerId: cluster.lessonMarkerId,
-        translation: persistedCluster?.translation,
+        translation:
+          sanitizeText(persistedCluster?.translation, {
+            allowMultiline: true,
+            maxLength: 240,
+          }) || undefined,
         keywordAnchors: cluster.keywordAnchors,
         latestQuestionAt: cluster.updatedAt,
         source: "fallback",
         status: persistedCluster?.status ?? "active",
         suggestedInterventions:
           persistedCluster?.suggestedInterventions?.length
-            ? persistedCluster.suggestedInterventions
-            : buildSuggestedInterventions(cluster.reasonChip, session),
+            ? persistedCluster.suggestedInterventions.map((value) =>
+                sanitizeText(value, { maxLength: 120 })
+              )
+            : buildSuggestedInterventions(cluster.reasonChip, session).map((value) =>
+                sanitizeText(value, { maxLength: 120 })
+              ),
         createdAt: persistedCluster?.createdAt ?? cluster.createdAt,
         updatedAt: cluster.updatedAt,
       } satisfies MisconceptionClusterSummary;
@@ -1920,10 +1963,27 @@ export async function recordLocalQuestion(
     session?: SessionMeta | null;
   }
 ): Promise<MisconceptionClusterSummary[]> {
-  await persistQuestionsWithSyncState([question], false);
+  const sanitizedQuestion = {
+    ...question,
+    anonymousId: sanitizeAnonymousId(question.anonymousId),
+    text: sanitizeStudentQuestionText(question.text),
+    language: sanitizeText(question.language, { maxLength: 24 }) || undefined,
+  };
+
+  await persistQuestionsWithSyncState([sanitizedQuestion], false);
+
+  addMonitoringBreadcrumb({
+    category: "student-question",
+    message: "Queued anonymous student question locally.",
+    data: {
+      sessionId: sanitizedQuestion.sessionId,
+      hasLanguage: Boolean(sanitizedQuestion.language),
+      textLength: sanitizedQuestion.text.length,
+    },
+  });
 
   const clusters = await refreshQuestionClusters({
-    sessionId: question.sessionId,
+    sessionId: sanitizedQuestion.sessionId,
     session: options?.session,
     force: true,
     preferLocal: true,
@@ -1932,7 +1992,7 @@ export async function recordLocalQuestion(
   if (hasSupabaseConfig) {
     await enqueueSyncJob(
       "question_batch",
-      { sessionId: question.sessionId },
+      { sessionId: sanitizedQuestion.sessionId },
       "Queued while the device is offline."
     );
   }
@@ -2007,7 +2067,7 @@ export async function createLessonMarker(args: {
     id: generateId("marker"),
     sessionId: args.sessionId,
     type: args.type,
-    label: args.label?.trim() || undefined,
+    label: sanitizeText(args.label, { maxLength: 80 }) || undefined,
     timestamp: args.timestamp ?? new Date().toISOString(),
   };
 
@@ -2089,8 +2149,18 @@ export async function createIntervention(args: {
     recoveryScore: args.recoveryScore,
     recoveryWindowSeconds: args.recoveryWindowSeconds,
     durationSeconds: args.durationSeconds,
-    notes: args.notes?.trim() || undefined,
+    notes: sanitizeTeacherNote(args.notes) || undefined,
   };
+
+  addMonitoringBreadcrumb({
+    category: "intervention",
+    message: "Teacher intervention logged.",
+    data: {
+      sessionId: intervention.sessionId,
+      type: intervention.type,
+      clusterId: intervention.clusterId,
+    },
+  });
 
   await saveIntervention(intervention, {
     attemptRemoteSync: args.attemptRemoteSync,
@@ -2173,21 +2243,38 @@ export async function persistClusters(
   const db = await getDatabase();
 
   for (const cluster of clusters) {
+    const sanitizedCluster = {
+      ...cluster,
+      title: sanitizeClusterTitle(cluster.title),
+      summary: sanitizeClusterSummary(cluster.summary),
+      representativeQuestion: sanitizeRepresentativeQuestion(
+        cluster.representativeQuestion
+      ),
+      translation:
+        sanitizeText(cluster.translation, {
+          allowMultiline: true,
+          maxLength: 240,
+        }) || undefined,
+      suggestedInterventions: cluster.suggestedInterventions.map((value) =>
+        sanitizeText(value, { maxLength: 120 })
+      ),
+    };
+
     await db.runAsync(
       UPSERT_CLUSTER_SQL,
-      cluster.id,
-      cluster.sessionId,
-      cluster.title,
-      cluster.summary,
-      cluster.affectedCount,
-      cluster.representativeQuestion,
-      cluster.reasonChip,
-      cluster.lessonMarkerId ?? null,
-      cluster.translation ?? null,
-      cluster.status,
-      JSON.stringify(cluster.suggestedInterventions),
-      cluster.createdAt,
-      cluster.updatedAt
+      sanitizedCluster.id,
+      sanitizedCluster.sessionId,
+      sanitizedCluster.title,
+      sanitizedCluster.summary,
+      sanitizedCluster.affectedCount,
+      sanitizedCluster.representativeQuestion,
+      sanitizedCluster.reasonChip,
+      sanitizedCluster.lessonMarkerId ?? null,
+      sanitizedCluster.translation ?? null,
+      sanitizedCluster.status,
+      JSON.stringify(sanitizedCluster.suggestedInterventions),
+      sanitizedCluster.createdAt,
+      sanitizedCluster.updatedAt
     );
   }
 }
@@ -2396,7 +2483,10 @@ export async function fetchLiveSessionSnapshot(
   const [participantRowsResult, pulseRowsResult, clustersResult] =
     await Promise.allSettled([
       fetchParticipantRows(sessionId),
-      fetchPulseRows(sessionId),
+      fetchPulseRows(
+        sessionId,
+        Math.max(1_200, (options?.session?.participantCount ?? 0) * 6)
+      ),
       refreshedClusters ? Promise.resolve(refreshedClusters) : fetchRemoteClusters(sessionId),
     ]);
 
@@ -2426,6 +2516,13 @@ export async function fetchLiveSessionSnapshot(
     participantRowsResult.status === "rejected" &&
     pulseRowsResult.status === "rejected"
   ) {
+    captureMonitoringException(
+      participantRowsResult.reason ?? pulseRowsResult.reason,
+      {
+        component: "liveSession.fetchLiveSessionSnapshot",
+        data: { sessionId },
+      }
+    );
     return deriveLocalSnapshotFromCache({
       sessionId,
       session: options?.session,

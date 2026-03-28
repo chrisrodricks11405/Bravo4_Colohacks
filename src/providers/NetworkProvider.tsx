@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useRef } from "react";
 import * as Network from "expo-network";
+import { addMonitoringBreadcrumb, captureMonitoringException } from "../lib/monitoring";
 import { isVoiceProviderConfigured } from "../services";
 import { useNetworkStore, useSessionStore } from "../stores";
 
@@ -16,6 +17,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     updateLastOnline,
   } = useNetworkStore();
   const sessionMode = useSessionStore((state) => state.session?.mode);
+  const lastStateSignatureRef = useRef<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
@@ -58,6 +60,29 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         setAIProviderReachable(false);
         setVoiceServiceReachable(false);
       }
+
+      const signature = JSON.stringify({
+        connected,
+        internetReachable,
+        mode:
+          sessionMode === "offline"
+            ? "local_hotspot"
+            : connected && internetReachable
+              ? "online"
+              : connected
+                ? "local_hotspot"
+                : "offline",
+        type: state.type,
+      });
+
+      if (signature !== lastStateSignatureRef.current) {
+        lastStateSignatureRef.current = signature;
+        addMonitoringBreadcrumb({
+          category: "network",
+          message: "Network state updated.",
+          data: JSON.parse(signature) as Record<string, unknown>,
+        });
+      }
     } catch {
       setConnected(false);
       setConnectionQuality("none");
@@ -65,6 +90,9 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       setAIProviderReachable(false);
       setVoiceServiceReachable(false);
       setMode("offline");
+      captureMonitoringException(new Error("Network state check failed."), {
+        component: "NetworkProvider.checkNetwork",
+      });
     }
   }, [
     sessionMode,

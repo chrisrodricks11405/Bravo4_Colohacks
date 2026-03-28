@@ -1,4 +1,12 @@
 import { getDatabase } from "../db";
+import { addMonitoringBreadcrumb } from "../lib/monitoring";
+import {
+  sanitizeAnonymousId,
+  sanitizePollOption,
+  sanitizePollQuestion,
+  sanitizeTeacherNote,
+  sanitizeText,
+} from "../lib/sanitization";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { queueSyncJob } from "./syncJobs";
 import type {
@@ -187,7 +195,7 @@ function readNumber(row: UnknownRow, ...keys: string[]) {
 
 function validatePollOptions(options: string[]) {
   const trimmedOptions = options
-    .map((option) => option.trim())
+    .map((option) => sanitizePollOption(option))
     .filter((option) => option.length > 0);
 
   if (trimmedOptions.length < 2 || trimmedOptions.length > 4) {
@@ -206,12 +214,16 @@ function parsePollOptions(value: unknown): PollOption[] {
     const normalized = value
       .map((entry, index) => {
         if (typeof entry === "string") {
-          return { index, text: entry };
+          const text = sanitizePollOption(entry);
+          return text ? { index, text } : null;
         }
 
         if (entry && typeof entry === "object") {
           const maybeEntry = entry as Record<string, unknown>;
-          const text = typeof maybeEntry.text === "string" ? maybeEntry.text.trim() : "";
+          const text =
+            typeof maybeEntry.text === "string"
+              ? sanitizePollOption(maybeEntry.text)
+              : "";
           const optionIndex =
             typeof maybeEntry.index === "number" && Number.isFinite(maybeEntry.index)
               ? maybeEntry.index
@@ -247,13 +259,13 @@ function normalizePollRow(row: PollRow): QuickPollPayload {
   return {
     id: row.id,
     sessionId: row.session_id,
-    question: row.question,
+    question: sanitizePollQuestion(row.question),
     options: parsePollOptions(row.options_json),
     correctOptionIndex: row.correct_option_index ?? undefined,
     source: row.source === "ai_generated" ? "ai_generated" : "manual",
     clusterId: row.cluster_id ?? undefined,
-    clusterTitle: row.cluster_title ?? undefined,
-    rationale: row.rationale ?? undefined,
+    clusterTitle: sanitizeText(row.cluster_title, { maxLength: 96 }) || undefined,
+    rationale: sanitizeTeacherNote(row.rationale) || undefined,
     status: normalizePollStatus(row.status),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -281,14 +293,17 @@ function normalizeRemotePoll(row: UnknownRow): QuickPollPayload | null {
   return {
     id,
     sessionId,
-    question,
+    question: sanitizePollQuestion(question),
     options,
     correctOptionIndex:
       readNumber(row, "correct_option_index", "correctOptionIndex") ?? undefined,
     source: readString(row, "source") === "ai_generated" ? "ai_generated" : "manual",
     clusterId: readString(row, "cluster_id", "clusterId") ?? undefined,
-    clusterTitle: readString(row, "cluster_title", "clusterTitle") ?? undefined,
-    rationale: readString(row, "rationale") ?? undefined,
+    clusterTitle:
+      sanitizeText(readString(row, "cluster_title", "clusterTitle"), {
+        maxLength: 96,
+      }) || undefined,
+    rationale: sanitizeTeacherNote(readString(row, "rationale")) || undefined,
     status: normalizePollStatus(readString(row, "status")),
     createdAt: toIsoString(createdAt),
     updatedAt: toIsoString(updatedAt),
@@ -302,7 +317,7 @@ function normalizePollResponseRow(row: PollResponseRow): PollResponsePayload {
     id: row.id,
     pollId: row.poll_id,
     sessionId: row.session_id,
-    anonymousId: row.anonymous_id,
+    anonymousId: sanitizeAnonymousId(row.anonymous_id),
     optionIndex: row.option_index,
     submittedAt: row.submitted_at,
   };
@@ -324,7 +339,7 @@ function normalizeRemotePollResponse(row: UnknownRow): PollResponsePayload | nul
     id,
     pollId,
     sessionId,
-    anonymousId,
+    anonymousId: sanitizeAnonymousId(anonymousId),
     optionIndex,
     submittedAt: toIsoString(submittedAt),
   };
@@ -334,13 +349,13 @@ function pollToRemoteRow(poll: QuickPollPayload) {
   return {
     id: poll.id,
     session_id: poll.sessionId,
-    question: poll.question,
+    question: sanitizePollQuestion(poll.question),
     options_json: poll.options,
     correct_option_index: poll.correctOptionIndex ?? null,
     source: poll.source,
     cluster_id: poll.clusterId ?? null,
-    cluster_title: poll.clusterTitle ?? null,
-    rationale: poll.rationale ?? null,
+    cluster_title: sanitizeText(poll.clusterTitle, { maxLength: 96 }) ?? null,
+    rationale: sanitizeTeacherNote(poll.rationale) ?? null,
     status: poll.status,
     created_at: poll.createdAt,
     updated_at: poll.updatedAt,
@@ -370,23 +385,33 @@ async function enqueueSyncJob(
 async function persistPoll(poll: QuickPollPayload, synced: boolean) {
   const db = await getDatabase();
   const syncedAt = synced ? new Date().toISOString() : null;
+  const sanitizedPoll = {
+    ...poll,
+    question: sanitizePollQuestion(poll.question),
+    options: poll.options.map((option) => ({
+      ...option,
+      text: sanitizePollOption(option.text),
+    })),
+    clusterTitle: sanitizeText(poll.clusterTitle, { maxLength: 96 }) || undefined,
+    rationale: sanitizeTeacherNote(poll.rationale) || undefined,
+  };
 
   await db.runAsync(
     UPSERT_POLL_SQL,
-    poll.id,
-    poll.sessionId,
-    poll.question,
-    JSON.stringify(poll.options),
-    poll.correctOptionIndex ?? null,
-    poll.source,
-    poll.clusterId ?? null,
-    poll.clusterTitle ?? null,
-    poll.rationale ?? null,
-    poll.status,
-    poll.createdAt,
-    poll.updatedAt,
-    poll.pushedAt ?? null,
-    poll.closedAt ?? null,
+    sanitizedPoll.id,
+    sanitizedPoll.sessionId,
+    sanitizedPoll.question,
+    JSON.stringify(sanitizedPoll.options),
+    sanitizedPoll.correctOptionIndex ?? null,
+    sanitizedPoll.source,
+    sanitizedPoll.clusterId ?? null,
+    sanitizedPoll.clusterTitle ?? null,
+    sanitizedPoll.rationale ?? null,
+    sanitizedPoll.status,
+    sanitizedPoll.createdAt,
+    sanitizedPoll.updatedAt,
+    sanitizedPoll.pushedAt ?? null,
+    sanitizedPoll.closedAt ?? null,
     synced ? 1 : 0,
     syncedAt
   );
@@ -458,7 +483,7 @@ async function fetchRemotePollResponses(
     .select("*")
     .eq("session_id", sessionId)
     .order("submitted_at", { ascending: false })
-    .limit(400);
+    .limit(800);
 
   if (pollId) {
     query = query.eq("poll_id", pollId);
@@ -575,14 +600,19 @@ export async function persistPollResponses(
   const syncedAt = synced ? new Date().toISOString() : null;
 
   for (const response of responses) {
+    const sanitizedResponse = {
+      ...response,
+      anonymousId: sanitizeAnonymousId(response.anonymousId),
+    };
+
     await db.runAsync(
       UPSERT_POLL_RESPONSE_SQL,
-      response.id,
-      response.pollId,
-      response.sessionId,
-      response.anonymousId,
-      response.optionIndex,
-      response.submittedAt,
+      sanitizedResponse.id,
+      sanitizedResponse.pollId,
+      sanitizedResponse.sessionId,
+      sanitizedResponse.anonymousId,
+      sanitizedResponse.optionIndex,
+      sanitizedResponse.submittedAt,
       synced ? 1 : 0,
       syncedAt
     );
@@ -592,12 +622,27 @@ export async function persistPollResponses(
 export async function recordLocalPollResponse(
   response: PollResponsePayload
 ): Promise<void> {
-  await persistPollResponses([response], false);
+  const sanitizedResponse = {
+    ...response,
+    anonymousId: sanitizeAnonymousId(response.anonymousId),
+  };
+
+  await persistPollResponses([sanitizedResponse], false);
+
+  addMonitoringBreadcrumb({
+    category: "poll-response",
+    message: "Queued anonymous poll response locally.",
+    data: {
+      sessionId: sanitizedResponse.sessionId,
+      pollId: sanitizedResponse.pollId,
+      optionIndex: sanitizedResponse.optionIndex,
+    },
+  });
 
   if (hasSupabaseConfig) {
     await enqueueSyncJob(
       "poll_result",
-      response,
+      sanitizedResponse,
       "Queued while the device is offline."
     );
   }
@@ -754,13 +799,13 @@ export async function createPollDraft(
   const draft: QuickPollPayload = {
     id: generateId("poll"),
     sessionId,
-    question: input.question.trim(),
+    question: sanitizePollQuestion(input.question),
     options: toPollOptions(input.options),
     correctOptionIndex: input.correctOptionIndex,
     source: input.source,
     clusterId: input.clusterId,
-    clusterTitle: input.clusterTitle,
-    rationale: input.rationale,
+    clusterTitle: sanitizeText(input.clusterTitle, { maxLength: 96 }) || undefined,
+    rationale: sanitizeTeacherNote(input.rationale) || undefined,
     status: "draft",
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -818,13 +863,13 @@ export async function updatePollDraft(
 
   const nextPoll: QuickPollPayload = {
     ...existing,
-    question: input.question.trim(),
+    question: sanitizePollQuestion(input.question),
     options: toPollOptions(input.options),
     correctOptionIndex: input.correctOptionIndex,
     source: input.source,
     clusterId: input.clusterId,
-    clusterTitle: input.clusterTitle,
-    rationale: input.rationale,
+    clusterTitle: sanitizeText(input.clusterTitle, { maxLength: 96 }) || undefined,
+    rationale: sanitizeTeacherNote(input.rationale) || undefined,
     updatedAt: new Date().toISOString(),
   };
 
@@ -895,6 +940,16 @@ export async function pushPoll(
     });
   }
 
+  addMonitoringBreadcrumb({
+    category: "poll",
+    message: "Quick poll pushed live.",
+    data: {
+      sessionId: nextPoll.sessionId,
+      pollId: nextPoll.id,
+      optionCount: nextPoll.options.length,
+    },
+  });
+
   return nextPoll;
 }
 
@@ -952,6 +1007,15 @@ export async function closePoll(
       sessionId: nextPoll.sessionId,
     });
   }
+
+  addMonitoringBreadcrumb({
+    category: "poll",
+    message: "Quick poll closed.",
+    data: {
+      sessionId: nextPoll.sessionId,
+      pollId: nextPoll.id,
+    },
+  });
 
   return nextPoll;
 }

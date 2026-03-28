@@ -15,13 +15,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { z } from "zod";
-import { Badge, Button, Card } from "../../src/components/ui";
+import { Button, Card } from "../../src/components/ui";
+import { Sentry } from "../../src/lib/monitoring";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useAuth, useSessionHydration } from "../../src/providers";
 import { createSession } from "../../src/services";
 import { useNetworkStore, usePreferencesStore, useSessionStore } from "../../src/stores";
 import { useShallow } from "zustand/react/shallow";
-import { borderRadius, colors, spacing, textStyles } from "../../src/theme";
+import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
 
 const sessionSchema = z.object({
   subject: z.string().trim().min(2, "Enter the subject."),
@@ -34,6 +35,8 @@ const sessionSchema = z.object({
 });
 
 type SessionFormValues = z.infer<typeof sessionSchema>;
+
+const QUICK_LANGUAGES = ["English", "Hindi", "Marathi", "Kannada"];
 
 function ModeOption({
   label,
@@ -63,12 +66,12 @@ function ModeOption({
 function InputField({
   label,
   error,
-  multiline = false,
+  hint,
   children,
 }: {
   label: string;
   error?: string;
-  multiline?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -76,7 +79,7 @@ function InputField({
       <Text style={styles.fieldLabel}>{label}</Text>
       {children}
       {error ? <Text style={styles.fieldError}>{error}</Text> : null}
-      {multiline ? <Text style={styles.fieldHint}>Optional, but useful for AI scaffolding later.</Text> : null}
+      {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -89,7 +92,6 @@ export default function CreateSessionScreen() {
   const setSession = useSessionStore((state) => state.setSession);
   const activeSession = useSessionStore((state) => state.session);
   const setNetworkMode = useNetworkStore((state) => state.setMode);
-  const isConnected = useNetworkStore((state) => state.isConnected);
   const supabaseReachable = useNetworkStore((state) => state.supabaseReachable);
   const preferences = usePreferencesStore(useShallow((state) => ({
     defaultSubject: state.defaultSubject,
@@ -106,6 +108,7 @@ export default function CreateSessionScreen() {
     control,
     watch,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<SessionFormValues>({
     resolver: zodResolver(sessionSchema),
@@ -121,11 +124,9 @@ export default function CreateSessionScreen() {
   });
 
   const selectedMode = watch("mode");
-  const willSyncImmediately =
-    selectedMode === "online" && supabaseReachable && hasSupabaseConfig;
-  const hasResumableSession =
-    activeSession?.status === "lobby" || activeSession?.status === "active";
-
+  const selectedLanguage = watch("language");
+  const willSyncImmediately = selectedMode === "online" && supabaseReachable && hasSupabaseConfig;
+  const hasResumableSession = activeSession?.status === "lobby" || activeSession?.status === "active";
   const currentSessionRoute =
     hasResumableSession && activeSession
       ? activeSession.status === "active"
@@ -168,6 +169,7 @@ export default function CreateSessionScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <Sentry.TimeToInitialDisplay record />
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -177,111 +179,73 @@ export default function CreateSessionScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.header}>
-            <Badge
-              label={selectedMode === "offline" ? "Offline hotspot flow" : "Realtime session flow"}
-              variant={selectedMode === "offline" ? "warning" : "primary"}
-              size="md"
-              style={styles.headerBadge}
-            />
-            <Text style={styles.title}>Start Session</Text>
-            <Text style={styles.subtitle}>
-              Create the teacher-facing session, generate the join code, and open the lobby with a live QR ready for students.
-            </Text>
-          </View>
-
-          {hasResumableSession && activeSession && currentSessionRoute ? (
-            <Card variant="default" padding="lg" style={styles.resumeCard}>
-              <View style={styles.resumeHeader}>
-                <View style={styles.resumeCopy}>
-                  <Text style={styles.resumeTitle}>A session is already in progress</Text>
-                  <Text style={styles.resumeText}>
-                    {activeSession.subject} · {activeSession.topic} · code {activeSession.joinCode}. Starting a new session replaces the locally active one.
-                  </Text>
-                </View>
-                <Badge
-                  label={activeSession.status === "active" ? "Class live" : "Lobby open"}
-                  variant={activeSession.status === "active" ? "success" : "info"}
-                  size="md"
-                />
-              </View>
-              <Button
-                title={activeSession.status === "active" ? "Open Live Dashboard" : "Resume Lobby"}
-                onPress={() => router.replace(currentSessionRoute)}
-                variant="outline"
-                size="md"
-                style={styles.resumeButton}
-              />
-            </Card>
-          ) : null}
-
-          <View style={styles.columns}>
-            <Card variant="elevated" padding="lg" style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Class setup</Text>
-              <Text style={styles.sectionSubtitle}>
-                These settings become the lobby metadata, QR payload, and local session snapshot.
-              </Text>
-
-              <InputField label="Session mode">
+          {/* Form Content - centered */}
+          <View style={styles.formWrapper}>
+            <Card variant="elevated" padding="xl" style={styles.formCard}>
+              {/* Header row */}
+              <View style={styles.formHeader}>
+                <Text style={styles.formTitle}>Initialize Session</Text>
                 <Controller
                   control={control}
                   name="mode"
                   render={({ field: { value, onChange } }) => (
-                    <View style={styles.modeGrid}>
+                    <View style={styles.modeToggle}>
                       <ModeOption
                         label="Online"
-                        description="Uses Supabase create + Realtime join counts."
+                        description=""
                         selected={value === "online"}
                         onPress={() => onChange("online")}
                       />
                       <ModeOption
-                        label="Offline hotspot"
-                        description="Creates locally first and queues remote sync for later."
+                        label="Offline"
+                        description=""
                         selected={value === "offline"}
                         onPress={() => onChange("offline")}
                       />
                     </View>
                   )}
                 />
-              </InputField>
+              </View>
 
-              <InputField label="Subject" error={errors.subject?.message}>
-                <Controller
-                  control={control}
-                  name="subject"
-                  render={({ field: { value, onChange, onBlur } }) => (
-                    <TextInput
-                      value={value}
-                      onChangeText={onChange}
-                      onBlur={onBlur}
-                      placeholder="Science"
-                      placeholderTextColor={colors.text.tertiary}
-                      style={styles.input}
+              {hasResumableSession && activeSession && currentSessionRoute ? (
+                <View style={styles.resumeBanner}>
+                  <View style={styles.resumeContent}>
+                    <Text style={styles.resumeTitle}>Session in progress</Text>
+                    <Text style={styles.resumeText}>
+                      {activeSession.subject} · {activeSession.topic} · code {activeSession.joinCode}
+                    </Text>
+                  </View>
+                  <Button
+                    title={activeSession.status === "active" ? "Open Live" : "Resume Lobby"}
+                    onPress={() => router.replace(currentSessionRoute)}
+                    variant="secondary"
+                    size="sm"
+                  />
+                </View>
+              ) : null}
+
+              {/* Subject & Grade - side by side */}
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldRowItem}>
+                  <InputField label="SUBJECT" error={errors.subject?.message}>
+                    <Controller
+                      control={control}
+                      name="subject"
+                      render={({ field: { value, onChange, onBlur } }) => (
+                        <TextInput
+                          value={value}
+                          onChangeText={onChange}
+                          onBlur={onBlur}
+                          placeholder="e.g. Theoretical Physics"
+                          placeholderTextColor={colors.text.tertiary}
+                          style={styles.input}
+                        />
+                      )}
                     />
-                  )}
-                />
-              </InputField>
-
-              <InputField label="Topic" error={errors.topic?.message}>
-                <Controller
-                  control={control}
-                  name="topic"
-                  render={({ field: { value, onChange, onBlur } }) => (
-                    <TextInput
-                      value={value}
-                      onChangeText={onChange}
-                      onBlur={onBlur}
-                      placeholder="States of matter"
-                      placeholderTextColor={colors.text.tertiary}
-                      style={styles.input}
-                    />
-                  )}
-                />
-              </InputField>
-
-              <View style={styles.row}>
-                <View style={styles.rowField}>
-                  <InputField label="Class / Grade" error={errors.gradeClass?.message}>
+                  </InputField>
+                </View>
+                <View style={styles.fieldRowItem}>
+                  <InputField label="GRADE / CLASS" error={errors.gradeClass?.message}>
                     <Controller
                       control={control}
                       name="gradeClass"
@@ -290,26 +254,7 @@ export default function CreateSessionScreen() {
                           value={value}
                           onChangeText={onChange}
                           onBlur={onBlur}
-                          placeholder="Grade 7"
-                          placeholderTextColor={colors.text.tertiary}
-                          style={styles.input}
-                        />
-                      )}
-                    />
-                  </InputField>
-                </View>
-
-                <View style={styles.rowField}>
-                  <InputField label="Language" error={errors.language?.message}>
-                    <Controller
-                      control={control}
-                      name="language"
-                      render={({ field: { value, onChange, onBlur } }) => (
-                        <TextInput
-                          value={value}
-                          onChangeText={onChange}
-                          onBlur={onBlur}
-                          placeholder="English"
+                          placeholder="Senior Year - Section A"
                           placeholderTextColor={colors.text.tertiary}
                           style={styles.input}
                         />
@@ -319,39 +264,87 @@ export default function CreateSessionScreen() {
                 </View>
               </View>
 
-              <InputField label="Lost threshold" error={errors.lostThreshold?.message}>
+              {/* Topic */}
+              <InputField label="TOPIC" error={errors.topic?.message}>
+                <Controller
+                  control={control}
+                  name="topic"
+                  render={({ field: { value, onChange, onBlur } }) => (
+                    <TextInput
+                      value={value}
+                      onChangeText={onChange}
+                      onBlur={onBlur}
+                      placeholder="Quantum Entanglement and Observation"
+                      placeholderTextColor={colors.text.tertiary}
+                      style={styles.input}
+                    />
+                  )}
+                />
+              </InputField>
+
+              {/* Language */}
+              <InputField label="INSTRUCTION LANGUAGE" error={errors.language?.message}>
+                <View style={styles.languageChips}>
+                  {QUICK_LANGUAGES.map((lang) => {
+                    const selected = selectedLanguage.trim().toLowerCase() === lang.toLowerCase();
+                    return (
+                      <TouchableOpacity
+                        key={lang}
+                        activeOpacity={0.8}
+                        onPress={() => setValue("language", lang)}
+                        style={[styles.languageChip, selected && styles.languageChipActive]}
+                      >
+                        <Text style={[styles.languageChipText, selected && styles.languageChipTextActive]}>
+                          {lang}
+                          {selected ? " ✓" : ""}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity style={styles.languageChip} activeOpacity={0.8}>
+                    <Text style={styles.languageChipText}>+ More</Text>
+                  </TouchableOpacity>
+                </View>
+              </InputField>
+
+              {/* Lost Threshold */}
+              <InputField label="LOST THRESHOLD" hint="AI alert sensitivity when students lose focus or show confusion.">
                 <Controller
                   control={control}
                   name="lostThreshold"
                   render={({ field: { value, onChange } }) => (
-                    <View style={styles.sliderWrap}>
-                      <View style={styles.sliderHeader}>
-                        <Text style={styles.sliderValue}>{Math.round(value)}%</Text>
-                        <Text style={styles.sliderHint}>Trigger level for classroom support signals</Text>
-                      </View>
-                      <Slider
-                        value={value}
-                        onValueChange={(nextValue) => onChange(Math.round(nextValue))}
-                        minimumValue={10}
-                        maximumValue={90}
-                        step={1}
-                        minimumTrackTintColor={colors.primary[600]}
-                        maximumTrackTintColor={colors.surface.border}
-                        thumbTintColor={colors.primary[700]}
-                      />
-                      <View style={styles.sliderLegend}>
-                        <Text style={styles.sliderLegendText}>10%</Text>
-                        <Text style={styles.sliderLegendText}>90%</Text>
+                    <View style={styles.sliderContainer}>
+                      <View style={styles.sliderRow}>
+                        <View style={styles.sliderTrackWrap}>
+                          <Slider
+                            value={value}
+                            onValueChange={(nextValue) => onChange(Math.round(nextValue))}
+                            minimumValue={10}
+                            maximumValue={90}
+                            step={1}
+                            minimumTrackTintColor={colors.primary[500]}
+                            maximumTrackTintColor={colors.surface.border}
+                            thumbTintColor={colors.primary[600]}
+                          />
+                          <View style={styles.sliderLabels}>
+                            <Text style={styles.sliderLabelText}>Low (Passive)</Text>
+                            <Text style={styles.sliderLabelText}>High (Aggressive)</Text>
+                          </View>
+                        </View>
+                        <View style={styles.thresholdBadge}>
+                          <Text style={styles.thresholdValue}>{Math.round(value)}%</Text>
+                        </View>
                       </View>
                     </View>
                   )}
                 />
               </InputField>
 
+              {/* Lesson Plan Seed */}
               <InputField
-                label="Lesson plan seed"
+                label="LESSON PLAN SEED"
                 error={errors.lessonPlanSeed?.message}
-                multiline
+                hint="Optional"
               >
                 <Controller
                   control={control}
@@ -361,7 +354,7 @@ export default function CreateSessionScreen() {
                       value={value}
                       onChangeText={onChange}
                       onBlur={onBlur}
-                      placeholder="Optional notes, learning objective, or starter prompt..."
+                      placeholder="Paste notes, keywords, or a summary for the AI to prioritize during live analysis..."
                       placeholderTextColor={colors.text.tertiary}
                       multiline
                       textAlignVertical="top"
@@ -377,88 +370,38 @@ export default function CreateSessionScreen() {
                 </View>
               ) : null}
 
-              <Button
-                title={isSubmitting ? "Creating session..." : "Create Session"}
-                onPress={onSubmit}
-                loading={isSubmitting}
-                size="lg"
-                fullWidth
-              />
+              {/* Bottom actions */}
+              <View style={styles.bottomActions}>
+                <TouchableOpacity style={styles.saveDraftButton} activeOpacity={0.7}>
+                  <Text style={styles.saveDraftText}>💾  Save as Draft</Text>
+                </TouchableOpacity>
+                <Button
+                  title="Launch Session  🚀"
+                  onPress={onSubmit}
+                  loading={isSubmitting}
+                  size="lg"
+                  style={styles.launchButton}
+                />
+              </View>
             </Card>
 
-            <View style={styles.sideColumn}>
-              <Card variant="default" padding="lg" style={styles.infoCard}>
-                <Text style={styles.sideTitle}>What happens next</Text>
-                <Text style={styles.sideText}>
-                  The app generates a 4-digit code, creates the active session locally, attempts Supabase sync when available, and opens the lobby with a QR for student joins.
-                </Text>
-
-                <View style={styles.statusStack}>
-                  <View style={styles.statusRow}>
-                    <Text style={styles.statusLabel}>Network</Text>
-                    <Badge
-                      label={isConnected ? "Connected" : "Offline"}
-                      variant={isConnected ? "success" : "warning"}
-                      size="md"
-                    />
-                  </View>
-                  <View style={styles.statusRow}>
-                    <Text style={styles.statusLabel}>Supabase</Text>
-                    <Badge
-                      label={
-                        hasSupabaseConfig
-                          ? willSyncImmediately
-                            ? "Create + Realtime"
-                            : "Queued for later"
-                          : "Local only"
-                      }
-                      variant={
-                        hasSupabaseConfig
-                          ? willSyncImmediately
-                            ? "success"
-                            : "warning"
-                          : "neutral"
-                      }
-                      size="md"
-                    />
-                  </View>
-                  <View style={styles.statusRow}>
-                    <Text style={styles.statusLabel}>Persistence</Text>
-                    <Badge label="SQLite active session" variant="info" size="md" />
-                  </View>
+            {/* AI Copilot card */}
+            <Card variant="default" padding="lg" style={styles.copilotCard}>
+              <View style={styles.copilotHeader}>
+                <View style={styles.copilotDot} />
+                <View>
+                  <Text style={styles.copilotLabel}>AI COPILOT</Text>
+                  <Text style={styles.copilotTitle}>System Ready</Text>
                 </View>
-              </Card>
-
-              <Card variant="default" padding="lg" style={styles.infoCard}>
-                <Text style={styles.sideTitle}>Session defaults</Text>
-                <Text style={styles.sideText}>
-                  Subject, class, language, and threshold start from your teacher preferences so the form opens nearly ready to launch.
-                </Text>
-                <Text style={styles.defaultsText}>
-                  {preferences.defaultSubject ?? "Subject unset"}{"\n"}
-                  {preferences.defaultGradeClass ?? "Class unset"}{"\n"}
-                  {preferences.defaultLanguage} language{"\n"}
-                  {preferences.defaultLostThreshold}% default threshold
-                </Text>
-              </Card>
-
-              {!hasSupabaseConfig || !isConnected || selectedMode === "offline" ? (
-                <Card variant="outlined" padding="lg" style={styles.noticeCard}>
-                  <Badge label="Offline-first safety" variant="warning" size="md" />
-                  <Text style={styles.noticeText}>
-                    {selectedMode === "offline"
-                      ? "Hotspot mode prioritizes the local classroom flow. Realtime joins are disabled until you move back to an online session."
-                      : !isConnected
-                        ? "You are offline, so the session will still open locally and queue remote sync jobs."
-                        : "Supabase is not configured yet, so this device will run in local-only mode."}
-                  </Text>
-                </Card>
-              ) : null}
-            </View>
+              </View>
+              <Text style={styles.copilotText}>
+                "I've optimized the monitoring threshold based on your previous sessions. Ready to launch whenever you are."
+              </Text>
+            </Card>
           </View>
 
           {isHydrating ? (
-            <Text style={styles.footerText}>Restoring any saved session state in the background…</Text>
+            <Text style={styles.footerText}>Restoring saved session state…</Text>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -477,79 +420,100 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.xl,
     paddingBottom: spacing["3xl"],
-    gap: spacing.xl,
+    alignItems: "center",
   },
-  header: {
-    gap: spacing.sm,
-  },
-  headerBadge: {
-    alignSelf: "flex-start",
-  },
-  title: {
-    ...textStyles.displayMedium,
-    color: colors.text.primary,
-  },
-  subtitle: {
-    ...textStyles.bodyLarge,
-    color: colors.text.secondary,
+
+  // Form wrapper
+  formWrapper: {
+    width: "100%",
     maxWidth: 860,
-  },
-  resumeCard: {
-    borderColor: colors.primary[100],
-  },
-  resumeHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: spacing.base,
-  },
-  resumeCopy: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  resumeTitle: {
-    ...textStyles.headingSmall,
-    color: colors.text.primary,
-  },
-  resumeText: {
-    ...textStyles.bodyMedium,
-    color: colors.text.secondary,
-  },
-  resumeButton: {
-    alignSelf: "flex-start",
-    marginTop: spacing.lg,
-  },
-  columns: {
-    flexDirection: "row",
-    gap: spacing.xl,
-    alignItems: "flex-start",
-    flexWrap: "wrap",
+    gap: spacing.lg,
   },
   formCard: {
-    flex: 1.35,
-    minWidth: 460,
+    ...shadows.lg,
+    borderRadius: borderRadius["3xl"],
   },
-  sideColumn: {
-    flex: 0.95,
-    minWidth: 320,
-    gap: spacing.base,
+  formHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xl,
   },
-  sectionTitle: {
+  formTitle: {
     ...textStyles.headingLarge,
     color: colors.text.primary,
   },
-  sectionSubtitle: {
+
+  // Mode toggle
+  modeToggle: {
+    flexDirection: "row",
+    backgroundColor: colors.surface.backgroundAlt,
+    borderRadius: borderRadius.lg,
+    overflow: "hidden",
+  },
+  modeOption: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  modeOptionSelected: {
+    backgroundColor: colors.surface.card,
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
+  },
+  modeLabel: {
     ...textStyles.bodyMedium,
     color: colors.text.secondary,
-    marginTop: spacing.xs,
-    marginBottom: spacing.xl,
+    fontWeight: "600",
+  },
+  modeLabelSelected: {
+    color: colors.text.primary,
+  },
+  modeDescription: {
+    display: "none",
+  },
+  modeDescriptionSelected: {},
+
+  // Resume banner
+  resumeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.primary[50],
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
+    marginBottom: spacing.lg,
+    gap: spacing.base,
+  },
+  resumeContent: {
+    flex: 1,
+  },
+  resumeTitle: {
+    ...textStyles.bodyMedium,
+    color: colors.primary[700],
+    fontWeight: "600",
+  },
+  resumeText: {
+    ...textStyles.bodySmall,
+    color: colors.primary[600],
+    marginTop: spacing.xxs,
+  },
+
+  // Fields
+  fieldRow: {
+    flexDirection: "row",
+    gap: spacing.lg,
+  },
+  fieldRowItem: {
+    flex: 1,
   },
   fieldGroup: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
   },
   fieldLabel: {
-    ...textStyles.label,
+    ...textStyles.caption,
     color: colors.text.secondary,
+    fontWeight: "700",
+    letterSpacing: 1,
     marginBottom: spacing.sm,
   },
   fieldError: {
@@ -564,89 +528,97 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 52,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
+    borderWidth: 0,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.surface.card,
+    backgroundColor: colors.surface.backgroundAlt,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     color: colors.text.primary,
     ...textStyles.bodyMedium,
   },
   textArea: {
-    minHeight: 120,
+    minHeight: 100,
+    paddingTop: spacing.base,
   },
-  modeGrid: {
+
+  // Language chips
+  languageChips: {
     flexDirection: "row",
-    gap: spacing.base,
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
-  modeOption: {
-    flex: 1,
-    padding: spacing.base,
-    borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.card,
-    gap: spacing.xs,
+  languageChip: {
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.surface.backgroundAlt,
   },
-  modeOptionSelected: {
-    borderColor: colors.primary[500],
-    backgroundColor: colors.primary[50],
+  languageChipActive: {
+    backgroundColor: colors.primary[600],
   },
-  modeLabel: {
-    ...textStyles.headingSmall,
-    color: colors.text.primary,
-  },
-  modeLabelSelected: {
-    color: colors.primary[700],
-  },
-  modeDescription: {
+  languageChipText: {
     ...textStyles.bodySmall,
     color: colors.text.secondary,
+    fontWeight: "600",
   },
-  modeDescriptionSelected: {
-    color: colors.primary[700],
+  languageChipTextActive: {
+    color: colors.text.inverse,
   },
-  row: {
+
+  // Slider
+  sliderContainer: {},
+  sliderRow: {
     flexDirection: "row",
-    gap: spacing.base,
+    alignItems: "center",
+    gap: spacing.lg,
   },
-  rowField: {
+  sliderTrackWrap: {
     flex: 1,
   },
-  sliderWrap: {
-    padding: spacing.base,
-    borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    backgroundColor: colors.surface.card,
-  },
-  sliderHeader: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: spacing.base,
-    marginBottom: spacing.sm,
-  },
-  sliderValue: {
-    ...textStyles.metricSmall,
-    color: colors.primary[700],
-  },
-  sliderHint: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
-    flex: 1,
-    textAlign: "right",
-  },
-  sliderLegend: {
+  sliderLabels: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: spacing.xs,
   },
-  sliderLegendText: {
+  sliderLabelText: {
     ...textStyles.caption,
     color: colors.text.tertiary,
   },
+  thresholdBadge: {
+    backgroundColor: colors.primary[50],
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    minWidth: 64,
+    alignItems: "center",
+  },
+  thresholdValue: {
+    ...textStyles.headingSmall,
+    color: colors.primary[700],
+  },
+
+  // Bottom actions
+  bottomActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.lg,
+    gap: spacing.base,
+  },
+  saveDraftButton: {
+    paddingVertical: spacing.md,
+  },
+  saveDraftText: {
+    ...textStyles.bodyMedium,
+    color: colors.text.secondary,
+    fontWeight: "600",
+  },
+  launchButton: {
+    paddingHorizontal: spacing["3xl"],
+    borderRadius: borderRadius.xl,
+  },
+
+  // Error
   errorBox: {
     backgroundColor: colors.status.errorBg,
     borderRadius: borderRadius.lg,
@@ -657,46 +629,46 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: "#991B1B",
   },
-  infoCard: {
-    gap: spacing.base,
+
+  // Copilot card
+  copilotCard: {
+    borderRadius: borderRadius.xl,
+    ...shadows.md,
   },
-  sideTitle: {
-    ...textStyles.headingSmall,
-    color: colors.text.primary,
-  },
-  sideText: {
-    ...textStyles.bodyMedium,
-    color: colors.text.secondary,
-  },
-  statusStack: {
-    gap: spacing.sm,
-  },
-  statusRow: {
+  copilotHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.base,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
-  statusLabel: {
+  copilotDot: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.status.success,
+    opacity: 0.8,
+  },
+  copilotLabel: {
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+  },
+  copilotTitle: {
     ...textStyles.bodyMedium,
+    color: colors.text.primary,
+    fontWeight: "700",
+  },
+  copilotText: {
+    ...textStyles.bodySmall,
     color: colors.text.secondary,
+    fontStyle: "italic",
+    lineHeight: 20,
   },
-  defaultsText: {
-    ...textStyles.bodyMedium,
-    color: colors.text.secondary,
-    lineHeight: 26,
-  },
-  noticeCard: {
-    backgroundColor: "#FFF9ED",
-    borderColor: "#FDE68A",
-    gap: spacing.base,
-  },
-  noticeText: {
-    ...textStyles.bodyMedium,
-    color: "#92400E",
-  },
+
   footerText: {
     ...textStyles.bodySmall,
     color: colors.text.tertiary,
+    marginTop: spacing.lg,
   },
 });

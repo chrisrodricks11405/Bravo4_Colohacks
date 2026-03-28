@@ -65,6 +65,20 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
   await ensureColumnExists(
     dbInstance,
+    "active_session",
+    "session_access_token",
+    "ALTER TABLE active_session ADD COLUMN session_access_token TEXT;"
+  );
+
+  await ensureColumnExists(
+    dbInstance,
+    "active_session",
+    "session_access_token_hash",
+    "ALTER TABLE active_session ADD COLUMN session_access_token_hash TEXT;"
+  );
+
+  await ensureColumnExists(
+    dbInstance,
     "intervention_history",
     "recovery_window_seconds",
     "ALTER TABLE intervention_history ADD COLUMN recovery_window_seconds INTEGER NOT NULL DEFAULT 60;"

@@ -39,14 +39,16 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginRight: spacing.xs,
+    marginRight: spacing.xs + 1,
   },
   text: {
     fontWeight: "600",
+    letterSpacing: 0.1,
   },
   textSm: {
     ...textStyles.caption,
     fontWeight: "600",
+    letterSpacing: 0.1,
   },
 });
 
@@ -55,7 +57,7 @@ const badgeVariants: Record<BadgeVariant, ViewStyle> = {
   warning: { backgroundColor: colors.status.warningBg },
   error: { backgroundColor: colors.status.errorBg },
   info: { backgroundColor: colors.status.infoBg },
-  neutral: { backgroundColor: colors.surface.borderLight },
+  neutral: { backgroundColor: colors.surface.backgroundAlt },
   primary: { backgroundColor: colors.primary[50] },
 };
 
@@ -78,6 +80,6 @@ const dotVariants: Record<BadgeVariant, ViewStyle> = {
 };
 
 const sizeStyles: Record<string, ViewStyle> = {
-  sm: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xxs },
-  md: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  sm: { paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs },
+  md: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2 },
 };

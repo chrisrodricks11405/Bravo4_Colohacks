@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
-  Easing,
   LayoutChangeEvent,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import type { PulseAggregateSnapshot } from "../../types";
 import { borderRadius, colors, spacing, textStyles } from "../../theme";
 
@@ -30,11 +34,15 @@ function formatLastUpdated(value?: string) {
 
 export function PulseBar({ snapshot }: PulseBarProps) {
   const [trackWidth, setTrackWidth] = useState(0);
-  const animatedWidths = useRef<Record<SegmentKey, Animated.Value>>({
-    gotIt: new Animated.Value(0),
-    sortOf: new Animated.Value(0),
-    lost: new Animated.Value(0),
-    silent: new Animated.Value(0),
+  const gotItWidth = useSharedValue(0);
+  const sortOfWidth = useSharedValue(0);
+  const lostWidth = useSharedValue(0);
+  const silentWidth = useSharedValue(0);
+  const animatedWidths = useRef<Record<SegmentKey, typeof gotItWidth>>({
+    gotIt: gotItWidth,
+    sortOf: sortOfWidth,
+    lost: lostWidth,
+    silent: silentWidth,
   }).current;
 
   const totals = useMemo(() => {
@@ -72,17 +80,26 @@ export function PulseBar({ snapshot }: PulseBarProps) {
       silent: trackWidth * totals.silentRatio,
     };
 
-    Animated.parallel(
-      (Object.keys(nextWidths) as SegmentKey[]).map((key) =>
-        Animated.timing(animatedWidths[key], {
-          toValue: nextWidths[key],
-          duration: 420,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
-        })
-      )
-    ).start();
+    (Object.keys(nextWidths) as SegmentKey[]).forEach((key) => {
+      animatedWidths[key].value = withTiming(nextWidths[key], {
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+      });
+    });
   }, [animatedWidths, totals, trackWidth]);
+
+  const gotItStyle = useAnimatedStyle(() => ({
+    width: animatedWidths.gotIt.value,
+  }));
+  const sortOfStyle = useAnimatedStyle(() => ({
+    width: animatedWidths.sortOf.value,
+  }));
+  const lostStyle = useAnimatedStyle(() => ({
+    width: animatedWidths.lost.value,
+  }));
+  const silentStyle = useAnimatedStyle(() => ({
+    width: animatedWidths.silent.value,
+  }));
 
   const handleTrackLayout = (event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
@@ -106,19 +123,17 @@ export function PulseBar({ snapshot }: PulseBarProps) {
       </View>
 
       <View style={styles.trackShell}>
-        <View style={styles.track} onLayout={handleTrackLayout}>
-          <Animated.View
-            style={[styles.segment, styles.gotItSegment, { width: animatedWidths.gotIt }]}
-          />
-          <Animated.View
-            style={[styles.segment, styles.sortOfSegment, { width: animatedWidths.sortOf }]}
-          />
-          <Animated.View
-            style={[styles.segment, styles.lostSegment, { width: animatedWidths.lost }]}
-          />
-          <Animated.View
-            style={[styles.segment, styles.silentSegment, { width: animatedWidths.silent }]}
-          />
+        <View
+          style={styles.track}
+          onLayout={handleTrackLayout}
+          accessible
+          accessibilityRole="summary"
+          accessibilityLabel={`Pulse mix: ${totals.gotItCount} got it, ${totals.sortOfCount} sort of, ${totals.lostCount} lost, ${totals.silentCount} with no pulse.`}
+        >
+          <Animated.View style={[styles.segment, styles.gotItSegment, gotItStyle]} />
+          <Animated.View style={[styles.segment, styles.sortOfSegment, sortOfStyle]} />
+          <Animated.View style={[styles.segment, styles.lostSegment, lostStyle]} />
+          <Animated.View style={[styles.segment, styles.silentSegment, silentStyle]} />
         </View>
       </View>
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { View, StyleSheet, ViewStyle } from "react-native";
-import { spacing, colors } from "../../theme";
+import { spacing } from "../../theme";
 
 interface SplitPanelProps {
   left: React.ReactNode;
@@ -8,6 +8,7 @@ interface SplitPanelProps {
   leftFlex?: number;
   rightFlex?: number;
   divider?: boolean;
+  gap?: number;
   style?: ViewStyle;
 }
 
@@ -16,11 +17,12 @@ export function SplitPanel({
   right,
   leftFlex = 2,
   rightFlex = 1,
-  divider = true,
+  divider = false,
+  gap = spacing.xl,
   style,
 }: SplitPanelProps) {
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, { gap }, style]}>
       <View style={[styles.panel, { flex: leftFlex }]}>{left}</View>
       {divider && <View style={styles.divider} />}
       <View style={[styles.panel, { flex: rightFlex }]}>{right}</View>
@@ -33,11 +35,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
   },
-  panel: {
-    padding: spacing.base,
-  },
+  panel: {},
   divider: {
     width: 1,
-    backgroundColor: colors.surface.border,
+    backgroundColor: "rgba(199, 196, 215, 0.15)",
   },
 });

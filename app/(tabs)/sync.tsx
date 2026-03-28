@@ -15,15 +15,9 @@ import { useNetworkStore } from "../../src/stores";
 import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
 
 function formatTimestamp(value: string | null) {
-  if (!value) {
-    return "Not synced yet";
-  }
-
+  if (!value) return "Not synced yet";
   return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   }).format(new Date(value));
 }
 
@@ -34,51 +28,35 @@ function getModeBadge(mode: "online" | "offline" | "local_hotspot") {
     case "offline":
       return { label: "Offline", status: "offline" as const };
     default:
-      return { label: "Online", status: "online" as const };
+      return { label: "Online Mode", status: "online" as const };
   }
 }
 
-function StatTile({
-  label,
-  value,
-  supporting,
-}: {
-  label: string;
-  value: string;
-  supporting: string;
-}) {
+function StatTile({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <Card variant="default" padding="lg" style={styles.statTile}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statSupporting}>{supporting}</Text>
+      <Text style={[styles.statValue, color ? { color } : undefined]}>{value}</Text>
     </Card>
   );
 }
 
+function getJobIcon(type: string) {
+  if (type.includes("sentiment") || type.includes("analysis")) return "✨";
+  if (type.includes("attendance") || type.includes("sync")) return "📡";
+  if (type.includes("report") || type.includes("student")) return "📄";
+  if (type.includes("ocr") || type.includes("whiteboard")) return "🖼";
+  return "📋";
+}
+
 export default function SyncScreen() {
   const {
-    error,
-    exportData,
-    forceSync,
-    isForceSyncing,
-    isLoading,
-    isRefreshing,
-    isRetryingFailed,
-    jobs,
-    overview,
-    refresh,
-    retryFailed,
+    error, exportData, forceSync, isForceSyncing, isLoading,
+    isRefreshing, isRetryingFailed, jobs, overview, refresh, retryFailed,
   } = useSyncDashboard();
   const {
-    mode,
-    syncInProgress,
-    syncProgress,
-    syncCompletedJobs,
-    syncTotalJobs,
-    pendingSyncCount,
-    failedSyncCount,
-    localQueueCount,
+    mode, syncInProgress, syncProgress, syncCompletedJobs, syncTotalJobs,
+    pendingSyncCount, failedSyncCount, localQueueCount,
   } = useNetworkStore();
 
   const modeBadge = getModeBadge(mode);
@@ -87,14 +65,9 @@ export default function SyncScreen() {
     try {
       const payload = await exportData();
       Clipboard.setString(payload);
-      Alert.alert("Copied", "Sync diagnostics were copied to the clipboard.");
+      Alert.alert("Copied", "Sync diagnostics copied to clipboard.");
     } catch (copyError) {
-      Alert.alert(
-        "Export unavailable",
-        copyError instanceof Error
-          ? copyError.message
-          : "Try again in a moment."
-      );
+      Alert.alert("Export unavailable", copyError instanceof Error ? copyError.message : "Try again.");
     }
   };
 
@@ -103,117 +76,77 @@ export default function SyncScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => {
-              void refresh(true);
-            }}
-            tintColor={colors.primary[600]}
-          />
+          <RefreshControl refreshing={isRefreshing} onRefresh={() => { void refresh(true); }} tintColor={colors.primary[600]} />
         }
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Offline & Sync</Text>
-            <Text style={styles.subtitle}>
-              Watch queued classroom data, retry failed jobs, and force a fresh sync when connectivity returns.
-            </Text>
+            <Text style={styles.subtitle}>Manage local classroom data and cloud synchronization.</Text>
           </View>
           <View style={styles.headerBadges}>
             <StatusChip status={modeBadge.status} label={modeBadge.label} />
             <StatusChip
               status={syncInProgress ? "syncing" : failedSyncCount > 0 ? "error" : "available"}
-              label={
-                syncInProgress
-                  ? `Syncing ${syncProgress}%`
-                  : failedSyncCount > 0
-                    ? "Needs retry"
-                    : "Healthy"
-              }
+              label={syncInProgress ? `Syncing ${syncProgress}%` : failedSyncCount > 0 ? "Needs retry" : "Healthy"}
             />
           </View>
         </View>
 
+        {/* Stat tiles */}
         <View style={styles.statGrid}>
-          <StatTile
-            label="Local queue"
-            value={String(localQueueCount)}
-            supporting="Unsynced local records waiting to upload."
-          />
-          <StatTile
-            label="Pending jobs"
-            value={String(pendingSyncCount)}
-            supporting="Batch sync jobs still in the queue."
-          />
-          <StatTile
-            label="Failed jobs"
-            value={String(failedSyncCount)}
-            supporting="Jobs currently scheduled for retry."
-          />
-          <StatTile
-            label="Last sync"
-            value={formatTimestamp(overview?.lastSyncAt ?? null)}
-            supporting="Most recent completed sync run."
-          />
+          <StatTile label="LOCAL QUEUE" value={String(localQueueCount)} />
+          <StatTile label="PENDING JOBS" value={String(pendingSyncCount)} color={pendingSyncCount > 0 ? colors.primary[600] : undefined} />
+          <StatTile label="FAILED JOBS" value={String(failedSyncCount)} color={failedSyncCount > 0 ? colors.status.error : undefined} />
+          <StatTile label="LAST SYNC" value={formatTimestamp(overview?.lastSyncAt ?? null)} />
         </View>
 
-        <Card variant="elevated" padding="lg" style={styles.progressCard}>
-          <View style={styles.progressHeader}>
+        {/* Syncing Queue */}
+        <Card variant="default" padding="xl" style={styles.syncCard}>
+          <View style={styles.syncHeader}>
             <View>
-              <Text style={styles.sectionTitle}>Sync engine</Text>
-              <Text style={styles.sectionDescription}>
-                Automatic retry with exponential backoff keeps classroom data moving once internet is back.
-              </Text>
+              <Text style={styles.cardTitle}>Syncing Queue</Text>
+              <Text style={styles.cardSubtitle}>Processing current batch of classroom insights</Text>
             </View>
-            <Badge
-              label={
-                overview?.nextRetryAt
-                  ? `Next retry ${formatTimestamp(overview.nextRetryAt)}`
-                  : "No retries scheduled"
-              }
-              variant={overview?.nextRetryAt ? "warning" : "success"}
-              size="md"
-            />
+            <Text style={styles.syncCount}>
+              <Text style={{ color: colors.primary[600], fontWeight: "700" }}>
+                {syncInProgress ? `${syncCompletedJobs}/${syncTotalJobs || 0}` : `${overview?.completedJobs ?? 0}`}
+              </Text>
+              {" jobs"}
+            </Text>
           </View>
 
+          {/* Progress bar */}
           <View style={styles.progressRail}>
             <View style={[styles.progressFill, { width: `${syncProgress}%` }]} />
           </View>
-          <Text style={styles.progressLabel}>
-            {syncInProgress
-              ? `${syncCompletedJobs}/${syncTotalJobs || 0} jobs processed`
-              : overview
-                ? `${overview.completedJobs} jobs completed so far`
-                : "Waiting for sync state"}
-          </Text>
 
-          <View style={styles.buttonRow}>
+          <View style={styles.syncActions}>
             <Button
               title="Force Sync"
-              onPress={() => {
-                void forceSync();
-              }}
+              onPress={() => { void forceSync(); }}
               loading={isForceSyncing}
-              style={styles.primaryButton}
+              size="md"
+              style={styles.syncPrimaryButton}
+              icon={<Text style={{ color: colors.text.inverse, fontSize: 14 }}>🔄</Text>}
             />
             <Button
               title="Retry Failed"
-              onPress={() => {
-                void retryFailed();
-              }}
+              onPress={() => { void retryFailed(); }}
               loading={isRetryingFailed}
               disabled={failedSyncCount === 0}
               variant="outline"
-              style={styles.secondaryButton}
+              size="md"
+              icon={<Text style={{ fontSize: 14 }}>↻</Text>}
             />
             <Button
-              title="Export"
-              onPress={() => {
-                void handleExport();
-              }}
+              title="Export Diagnostics"
+              onPress={() => { void handleExport(); }}
               variant="ghost"
-              style={styles.secondaryButton}
+              size="md"
+              icon={<Text style={{ fontSize: 14 }}>📋</Text>}
             />
           </View>
         </Card>
@@ -225,55 +158,50 @@ export default function SyncScreen() {
           </Card>
         ) : null}
 
-        <Card variant="default" padding="lg" style={styles.queueCard}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Queued jobs</Text>
-              <Text style={styles.sectionDescription}>
-                Sessions and summaries favor the server as the source of aggregate truth. Event streams merge by id.
-              </Text>
-            </View>
-            <Badge
-              label={jobs.length > 0 ? `${jobs.length} visible` : "Queue empty"}
-              variant={jobs.length > 0 ? "info" : "neutral"}
-              size="md"
-            />
+        {/* Active Queue Log */}
+        <Card variant="default" padding="xl" style={styles.queueCard}>
+          <View style={styles.queueHeader}>
+            <Text style={styles.cardTitle}>Active Queue Log</Text>
+            <Badge label="Real-time update" variant="neutral" size="sm" />
+          </View>
+
+          {/* Table header */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, { flex: 2 }]}>JOB TYPE</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1 }]}>CREATED</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>STATUS</Text>
           </View>
 
           {isLoading ? (
             <Text style={styles.emptyText}>Loading sync queue…</Text>
           ) : jobs.length === 0 ? (
-            <Text style={styles.emptyText}>
-              No sync jobs are waiting right now. Classroom data is either local-only or already caught up.
-            </Text>
+            <Text style={styles.emptyText}>No sync jobs waiting. All caught up.</Text>
           ) : (
             <View style={styles.jobList}>
               {jobs.map((job) => (
                 <View key={job.id} style={styles.jobRow}>
-                  <View style={styles.jobCopy}>
-                    <Text style={styles.jobType}>{job.type.replace(/_/g, " ")}</Text>
-                    <Text style={styles.jobMeta}>
-                      Created {formatTimestamp(job.createdAt)}
-                    </Text>
-                    {job.error ? (
-                      <Text style={styles.jobError}>{job.error}</Text>
-                    ) : null}
+                  <View style={[styles.jobCell, { flex: 2, flexDirection: "row", alignItems: "center", gap: spacing.md }]}>
+                    <Text style={styles.jobIcon}>{getJobIcon(job.type)}</Text>
+                    <View>
+                      <Text style={styles.jobType}>{job.type.replace(/_/g, " ")}</Text>
+                      {job.error ? <Text style={styles.jobError} numberOfLines={1}>{job.error}</Text> : null}
+                    </View>
                   </View>
-                  <View style={styles.jobStatus}>
+                  <Text style={[styles.jobCell, styles.jobTime, { flex: 1 }]}>
+                    {formatTimestamp(job.createdAt)}
+                  </Text>
+                  <View style={[styles.jobCell, { flex: 1, alignItems: "flex-end" }]}>
                     <Badge
-                      label={job.status.replace(/_/g, " ")}
+                      label={job.status === "in_progress" ? "Processing" : job.status.replace(/_/g, " ")}
                       variant={
-                        job.status === "completed"
-                          ? "success"
-                          : job.status === "failed"
-                            ? "error"
-                            : job.status === "in_progress"
-                              ? "info"
-                              : "warning"
+                        job.status === "completed" ? "success"
+                          : job.status === "failed" ? "error"
+                          : job.status === "in_progress" ? "info"
+                          : "warning"
                       }
-                      size="md"
+                      size="sm"
+                      dot
                     />
-                    <Text style={styles.jobRetry}>Retries {job.retryCount}</Text>
                   </View>
                 </View>
               ))}
@@ -293,109 +221,102 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.xl,
     paddingBottom: spacing["3xl"],
-    gap: spacing.xl,
+    maxWidth: 960,
+    alignSelf: "center",
+    width: "100%",
+    gap: spacing.lg,
   },
+
+  // Header
   header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: spacing.base,
   },
   title: {
-    ...textStyles.displayMedium,
+    ...textStyles.headingLarge,
     color: colors.text.primary,
   },
   subtitle: {
-    ...textStyles.bodyLarge,
+    ...textStyles.bodyMedium,
     color: colors.text.secondary,
     marginTop: spacing.xs,
-    maxWidth: 760,
   },
   headerBadges: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
+    marginTop: spacing.xs,
   },
+
+  // Stat grid
   statGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.base,
+    gap: spacing.md,
   },
   statTile: {
-    minWidth: 220,
-    flexGrow: 1,
+    flex: 1,
     borderRadius: borderRadius.xl,
   },
   statLabel: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
   },
   statValue: {
     ...textStyles.headingLarge,
     color: colors.text.primary,
-    marginTop: spacing.sm,
   },
-  statSupporting: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
-    marginTop: spacing.sm,
-  },
-  progressCard: {
+
+  // Sync card
+  syncCard: {
     borderRadius: borderRadius["2xl"],
-    ...shadows.md,
   },
-  progressHeader: {
+  syncHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: spacing.base,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.base,
     marginBottom: spacing.lg,
   },
-  sectionTitle: {
+  cardTitle: {
     ...textStyles.headingSmall,
     color: colors.text.primary,
   },
-  sectionDescription: {
+  cardSubtitle: {
     ...textStyles.bodySmall,
     color: colors.text.secondary,
     marginTop: spacing.xs,
-    maxWidth: 680,
+  },
+  syncCount: {
+    ...textStyles.bodyMedium,
+    color: colors.text.secondary,
   },
   progressRail: {
-    height: 10,
-    marginTop: spacing.lg,
+    height: 8,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface.borderLight,
+    backgroundColor: colors.surface.backgroundAlt,
     overflow: "hidden",
+    marginBottom: spacing.lg,
   },
   progressFill: {
     height: "100%",
-    backgroundColor: colors.primary[600],
+    backgroundColor: colors.primary[500],
+    borderRadius: borderRadius.full,
   },
-  progressLabel: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
-    marginTop: spacing.sm,
-  },
-  buttonRow: {
+  syncActions: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.xl,
+    gap: spacing.md,
   },
-  primaryButton: {
+  syncPrimaryButton: {
     minWidth: 140,
   },
-  secondaryButton: {
-    minWidth: 140,
-  },
+
+  // Error
   errorCard: {
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.status.errorBg,
+    backgroundColor: colors.status.errorBg,
   },
   errorTitle: {
     ...textStyles.bodyLarge,
@@ -404,54 +325,64 @@ const styles = StyleSheet.create({
   },
   errorText: {
     ...textStyles.bodySmall,
-    color: colors.text.secondary,
+    color: "#991B1B",
     marginTop: spacing.xs,
   },
+
+  // Queue
   queueCard: {
     borderRadius: borderRadius["2xl"],
+  },
+  queueHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+  },
+  tableHeader: {
+    flexDirection: "row",
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface.backgroundAlt,
+  },
+  tableHeaderText: {
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
   emptyText: {
     ...textStyles.bodyMedium,
     color: colors.text.secondary,
+    paddingVertical: spacing.xl,
   },
   jobList: {
-    gap: spacing.sm,
+    gap: 0,
   },
   jobRow: {
-    borderWidth: 1,
-    borderColor: colors.surface.border,
-    borderRadius: borderRadius.xl,
-    padding: spacing.base,
-    backgroundColor: colors.surface.background,
     flexDirection: "row",
-    justifyContent: "space-between",
-    gap: spacing.base,
+    alignItems: "center",
+    paddingVertical: spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface.backgroundAlt,
   },
-  jobCopy: {
-    flex: 1,
+  jobCell: {},
+  jobIcon: {
+    fontSize: 18,
   },
   jobType: {
-    ...textStyles.bodyLarge,
+    ...textStyles.bodyMedium,
     color: colors.text.primary,
-    fontWeight: "700",
+    fontWeight: "500",
     textTransform: "capitalize",
   },
-  jobMeta: {
+  jobTime: {
     ...textStyles.bodySmall,
     color: colors.text.secondary,
-    marginTop: spacing.xxs,
   },
   jobError: {
-    ...textStyles.bodySmall,
-    color: "#991B1B",
-    marginTop: spacing.sm,
-  },
-  jobStatus: {
-    alignItems: "flex-end",
-    gap: spacing.xs,
-  },
-  jobRetry: {
     ...textStyles.caption,
-    color: colors.text.tertiary,
+    color: "#991B1B",
+    marginTop: spacing.xxs,
   },
 });

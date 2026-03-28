@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.classpulse.teacher",
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "backgroundColor": "#1A1B2E",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -38,7 +39,8 @@
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
-      "expo-asset"
+      "expo-asset",
+      "@sentry/react-native/expo"
     ]
   }
 }

@@ -661,6 +661,114 @@ function buildSummaryId(sessionId: string) {
   return `summary_${sessionId}`;
 }
 
+export function buildSessionSummaryFromArtifacts(args: {
+  session: SessionMeta;
+  snapshots: PulseAggregateSnapshot[];
+  lessonMarkers: SessionSummaryPayload["lessonMarkers"];
+  interventions: InterventionActionPayload[];
+  clusters: SessionSummaryPayload["topClusters"];
+  dominantPollInsight?: PollSummaryInsight;
+  teacherId?: string;
+  voiceReflectionUri?: string;
+  voiceReflectionTranscript?: string;
+  voiceReflectionSummary?: string;
+  voiceReflectionActions?: SessionSummaryPayload["voiceReflectionActions"];
+  voiceReflectionActionSource?: SessionSummaryPayload["voiceReflectionActionSource"];
+}) {
+  const sessionStart =
+    args.session.startedAt ?? args.snapshots[0]?.timestamp ?? args.session.createdAt;
+  const sessionEnd =
+    args.session.endedAt ??
+    args.snapshots[args.snapshots.length - 1]?.timestamp ??
+    new Date().toISOString();
+  const sessionEndMs = new Date(sessionEnd).getTime();
+
+  const settledInterventions = args.interventions.map((intervention) =>
+    settleIntervention(
+      intervention,
+      buildHydratedTrend(args.snapshots, args.interventions),
+      sessionEndMs
+    )
+  );
+  const comprehensionTimeline = buildHydratedTrend(
+    args.snapshots,
+    settledInterventions
+  );
+  const peakConfusionMoments = derivePeakConfusionMoments(
+    comprehensionTimeline,
+    args.lessonMarkers
+  );
+  const peakConfusionIndex = comprehensionTimeline.reduce(
+    (max, point) => Math.max(max, point.confusionIndex),
+    0
+  );
+  const endingConfusionIndex =
+    comprehensionTimeline[comprehensionTimeline.length - 1]?.confusionIndex ?? 0;
+  const peakLostPercent = comprehensionTimeline.reduce(
+    (max, point) => Math.max(max, point.lostPercent),
+    0
+  );
+  const endingLostPercent =
+    comprehensionTimeline[comprehensionTimeline.length - 1]?.lostPercent ?? 0;
+  const topClusters = [...args.clusters]
+    .sort(
+      (left, right) =>
+        right.affectedCount - left.affectedCount ||
+        right.updatedAt.localeCompare(left.updatedAt)
+    )
+    .slice(0, 4);
+  const topReasonChips = aggregateReasonChips(args.clusters).slice(0, 5);
+  const interventionStats = aggregateInterventionStats(settledInterventions);
+  const duration = Math.max(
+    1,
+    Math.round(
+      (new Date(sessionEnd).getTime() - new Date(sessionStart).getTime()) / 60_000
+    )
+  );
+  const totalParticipants =
+    Math.max(
+      args.session.participantCount,
+      (args.snapshots[args.snapshots.length - 1]?.totalActive ?? 0) +
+        (args.snapshots[args.snapshots.length - 1]?.disconnectedCount ?? 0)
+    ) || args.session.participantCount;
+  const overallRecoveryScore = computeOverallRecoveryScore(
+    peakConfusionIndex,
+    endingConfusionIndex
+  );
+
+  return {
+    id: buildSummaryId(args.session.id),
+    sessionId: args.session.id,
+    teacherId: args.teacherId ?? args.session.teacherId,
+    subject: args.session.subject,
+    topic: args.session.topic,
+    gradeClass: args.session.gradeClass,
+    duration,
+    totalParticipants,
+    comprehensionTimeline,
+    peakConfusionMoments,
+    topClusters,
+    topReasonChips,
+    lessonMarkers: args.lessonMarkers,
+    interventions: settledInterventions,
+    interventionStats,
+    dominantPollInsight: args.dominantPollInsight,
+    peakConfusionIndex: Math.round(peakConfusionIndex * 10) / 10,
+    endingConfusionIndex: Math.round(endingConfusionIndex * 10) / 10,
+    peakLostPercent: Math.round(peakLostPercent * 10) / 10,
+    endingLostPercent: Math.round(endingLostPercent * 10) / 10,
+    overallRecoveryScore,
+    voiceReflectionUri: args.voiceReflectionUri,
+    voiceReflectionTranscript: args.voiceReflectionTranscript,
+    voiceReflectionSummary: args.voiceReflectionSummary,
+    voiceReflectionActions: args.voiceReflectionActions ?? [],
+    voiceReflectionActionSource: args.voiceReflectionActionSource,
+    summarySource: "fallback" as const,
+    createdAt: sessionEnd,
+    updatedAt: new Date().toISOString(),
+  } satisfies SessionSummaryPayload;
+}
+
 function buildFallbackSummary(row: {
   id: string;
   sessionId: string;
@@ -1250,91 +1358,21 @@ export async function generateSessionSummary(
           lessonMarkers: storedMarkers,
         });
 
-  const sessionStart = session.startedAt ?? snapshots[0]?.timestamp ?? session.createdAt;
-  const sessionEnd =
-    session.endedAt ?? snapshots[snapshots.length - 1]?.timestamp ?? new Date().toISOString();
-  const sessionEndMs = new Date(sessionEnd).getTime();
-  const settledInterventions = storedInterventions.map((intervention) =>
-    settleIntervention(
-      intervention,
-      buildHydratedTrend(snapshots, storedInterventions),
-      sessionEndMs
-    )
-  );
-  const comprehensionTimeline = buildHydratedTrend(snapshots, settledInterventions);
-  const peakConfusionMoments = derivePeakConfusionMoments(
-    comprehensionTimeline,
-    storedMarkers
-  );
-  const peakConfusionIndex = comprehensionTimeline.reduce(
-    (max, point) => Math.max(max, point.confusionIndex),
-    0
-  );
-  const endingConfusionIndex =
-    comprehensionTimeline[comprehensionTimeline.length - 1]?.confusionIndex ?? 0;
-  const peakLostPercent = comprehensionTimeline.reduce(
-    (max, point) => Math.max(max, point.lostPercent),
-    0
-  );
-  const endingLostPercent =
-    comprehensionTimeline[comprehensionTimeline.length - 1]?.lostPercent ?? 0;
-  const topClusters = [...clusters]
-    .sort(
-      (left, right) =>
-        right.affectedCount - left.affectedCount ||
-        right.updatedAt.localeCompare(left.updatedAt)
-    )
-    .slice(0, 4);
-  const topReasonChips = aggregateReasonChips(clusters).slice(0, 5);
-  const interventionStats = aggregateInterventionStats(settledInterventions);
   const dominantPollInsight = await computeDominantPollInsight(session.id);
-  const duration = Math.max(
-    1,
-    Math.round(
-      (new Date(sessionEnd).getTime() - new Date(sessionStart).getTime()) / 60_000
-    )
-  );
-  const totalParticipants =
-    Math.max(
-      session.participantCount,
-      (snapshots[snapshots.length - 1]?.totalActive ?? 0) +
-        (snapshots[snapshots.length - 1]?.disconnectedCount ?? 0)
-    ) || session.participantCount;
-  const overallRecoveryScore = computeOverallRecoveryScore(
-    peakConfusionIndex,
-    endingConfusionIndex
-  );
-  const summaryBase: SessionSummaryPayload = {
-    id: buildSummaryId(session.id),
-    sessionId: session.id,
-    teacherId: options?.teacherId ?? session.teacherId,
-    subject: session.subject,
-    topic: session.topic,
-    gradeClass: session.gradeClass,
-    duration,
-    totalParticipants,
-    comprehensionTimeline,
-    peakConfusionMoments,
-    topClusters,
-    topReasonChips,
+  const summaryBase = buildSessionSummaryFromArtifacts({
+    session,
+    snapshots,
     lessonMarkers: storedMarkers,
-    interventions: settledInterventions,
-    interventionStats,
+    interventions: storedInterventions,
+    clusters,
     dominantPollInsight,
-    peakConfusionIndex: Math.round(peakConfusionIndex * 10) / 10,
-    endingConfusionIndex: Math.round(endingConfusionIndex * 10) / 10,
-    peakLostPercent: Math.round(peakLostPercent * 10) / 10,
-    endingLostPercent: Math.round(endingLostPercent * 10) / 10,
-    overallRecoveryScore,
+    teacherId: options?.teacherId ?? session.teacherId,
     voiceReflectionUri: options?.voiceReflectionUri,
     voiceReflectionTranscript: options?.voiceReflectionTranscript,
     voiceReflectionSummary: options?.voiceReflectionSummary,
-    voiceReflectionActions: options?.voiceReflectionActions ?? [],
+    voiceReflectionActions: options?.voiceReflectionActions,
     voiceReflectionActionSource: options?.voiceReflectionActionSource,
-    summarySource: "fallback",
-    createdAt: sessionEnd,
-    updatedAt: new Date().toISOString(),
-  };
+  });
 
   let aiSummary: AISessionSummary = {
     narrative: `Confusion peaked at ${summaryBase.peakConfusionIndex.toFixed(1)} and closed at ${summaryBase.endingConfusionIndex.toFixed(1)}. Recovery finished at ${summaryBase.overallRecoveryScore} out of 100.`,

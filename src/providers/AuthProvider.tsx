@@ -2,6 +2,11 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import * as Linking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, hasSupabaseConfig } from "../lib/supabase";
+import {
+  addMonitoringBreadcrumb,
+  captureMonitoringException,
+  setMonitoringUser,
+} from "../lib/monitoring";
 
 interface AuthContextValue {
   session: Session | null;
@@ -33,10 +38,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     const hydrateSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (isMounted) {
-        setSession(data.session ?? null);
-        setIsLoading(false);
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (isMounted) {
+          setSession(data.session ?? null);
+          setMonitoringUser(data.session?.user ?? null);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setSession(null);
+          setMonitoringUser(null);
+          setIsLoading(false);
+        }
+        captureMonitoringException(error, {
+          component: "AuthProvider.hydrateSession",
+        });
       }
     };
 
@@ -44,11 +61,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (isMounted) {
         setSession(nextSession);
+        setMonitoringUser(nextSession?.user ?? null);
         setIsLoading(false);
       }
+
+      addMonitoringBreadcrumb({
+        category: "auth",
+        message: `Supabase auth event: ${event}`,
+        data: {
+          hasSession: Boolean(nextSession),
+          userId: nextSession?.user?.id,
+        },
+      });
     });
 
     return () => {
@@ -69,6 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        captureMonitoringException(error, {
+          component: "AuthProvider.signInWithPassword",
+        });
         throw error;
       }
     },
@@ -79,6 +109,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        captureMonitoringException(error, {
+          component: "AuthProvider.signUp",
+        });
         throw error;
       }
     },
@@ -93,12 +126,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        captureMonitoringException(error, {
+          component: "AuthProvider.sendMagicLink",
+        });
         throw error;
       }
     },
     signOut: async () => {
       const { error } = await supabase.auth.signOut();
       if (error) {
+        captureMonitoringException(error, {
+          component: "AuthProvider.signOut",
+        });
         throw error;
       }
     },

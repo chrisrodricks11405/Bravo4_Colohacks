@@ -13,109 +13,27 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StateScreen } from "../../src/components/app/StateScreen";
 import { Badge, Button, Card, StatusChip } from "../../src/components/ui";
 import { useSessionLobby } from "../../src/hooks/useSessionLobby";
+import { Sentry } from "../../src/lib/monitoring";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useSessionHydration } from "../../src/providers";
 import { useNetworkStore, useSessionStore } from "../../src/stores";
-import { borderRadius, colors, spacing, textStyles } from "../../src/theme";
+import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
 
 function getQualityMeta(quality: "good" | "fair" | "poor" | "none") {
   switch (quality) {
     case "good":
-      return { label: "Strong", activeBars: 4 };
+      return { label: "Strong", activeBars: 4, color: colors.status.success };
     case "fair":
-      return { label: "Fair", activeBars: 3 };
+      return { label: "Fair", activeBars: 3, color: colors.status.warning };
     case "poor":
-      return { label: "Weak", activeBars: 2 };
+      return { label: "Weak", activeBars: 2, color: colors.status.error };
     default:
-      return { label: "Offline", activeBars: 0 };
+      return { label: "Offline", activeBars: 0, color: colors.text.tertiary };
   }
 }
 
 function formatJoinCode(joinCode: string) {
-  return joinCode.split("").join(" ");
-}
-
-function MetricCard({
-  label,
-  value,
-  supporting,
-}: {
-  label: string;
-  value: string;
-  supporting?: string;
-}) {
-  return (
-    <Card variant="default" padding="lg" style={styles.metricCard}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-      {supporting ? <Text style={styles.metricSupporting}>{supporting}</Text> : null}
-    </Card>
-  );
-}
-
-function NetworkIndicator({
-  isConnected,
-  connectionQuality,
-  remoteState,
-}: {
-  isConnected: boolean;
-  connectionQuality: "good" | "fair" | "poor" | "none";
-  remoteState: "live" | "connecting" | "degraded" | "disabled";
-}) {
-  const quality = getQualityMeta(connectionQuality);
-
-  return (
-    <View style={styles.networkBlock}>
-      <View style={styles.networkHeader}>
-        <View>
-          <Text style={styles.panelTitle}>Network quality</Text>
-          <Text style={styles.panelText}>
-            {isConnected
-              ? "Lobby transport is ready for student joins."
-              : "Lobby is still usable locally while connectivity is down."}
-          </Text>
-        </View>
-        <Badge
-          label={
-            remoteState === "live"
-              ? "Realtime live"
-              : remoteState === "connecting"
-                ? "Connecting"
-                : remoteState === "disabled"
-                  ? "Realtime off"
-                  : "Realtime degraded"
-          }
-          variant={
-            remoteState === "live"
-              ? "success"
-              : remoteState === "connecting"
-                ? "info"
-                : remoteState === "disabled"
-                  ? "neutral"
-                  : "warning"
-          }
-          size="md"
-        />
-      </View>
-
-      <View style={styles.networkMeterRow}>
-        <View style={styles.networkBars}>
-          {[0, 1, 2, 3].map((bar) => (
-            <View
-              key={bar}
-              style={[
-                styles.networkBar,
-                { height: 12 + bar * 6 },
-                bar < quality.activeBars && styles.networkBarActive,
-                !isConnected && styles.networkBarInactive,
-              ]}
-            />
-          ))}
-        </View>
-        <Text style={styles.networkMeterValue}>{quality.label}</Text>
-      </View>
-    </View>
-  );
+  return joinCode.split("").join("  ");
 }
 
 export default function SessionLobbyScreen() {
@@ -131,9 +49,7 @@ export default function SessionLobbyScreen() {
 
   const normalizedSessionId = Array.isArray(sessionId) ? sessionId[0] : sessionId;
   const realtimeEnabled =
-    Boolean(hasSupabaseConfig) &&
-    supabaseReachable &&
-    storeSessionMode !== "offline";
+    Boolean(hasSupabaseConfig) && supabaseReachable && storeSessionMode !== "offline";
 
   const {
     session,
@@ -149,19 +65,13 @@ export default function SessionLobbyScreen() {
   } = useSessionLobby(normalizedSessionId, realtimeEnabled);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
-
+    if (!session) return;
     setNetworkMode(session.mode === "offline" ? "local_hotspot" : "online");
   }, [session, setNetworkMode]);
 
   useEffect(() => {
     if (session?.status === "active") {
-      router.replace({
-        pathname: "/session/live",
-        params: { sessionId: session.id },
-      });
+      router.replace({ pathname: "/session/live", params: { sessionId: session.id } });
     }
   }, [router, session?.id, session?.status]);
 
@@ -188,78 +98,74 @@ export default function SessionLobbyScreen() {
     );
   }
 
-  const qrSize = Math.min(width * 0.38, height * 0.62, 380);
-  const isCompact = width < 1100;
-  const canSyncImmediately =
-    session.mode === "online" && supabaseReachable && hasSupabaseConfig;
+  const qrSize = Math.min(width * 0.3, height * 0.5, 300);
+  const canSyncImmediately = session.mode === "online" && supabaseReachable && hasSupabaseConfig;
   const displayedRemoteState = session.mode === "offline" ? "disabled" : remoteState;
+  const quality = getQualityMeta(connectionQuality);
 
   const handleLockPress = async () => {
-    try {
-      await lockSession(canSyncImmediately);
-    } catch {
-      // Error state is surfaced in the screen body.
-    }
+    try { await lockSession(canSyncImmediately); } catch {}
   };
 
   const handleRegeneratePress = async () => {
     if (session.participantCount > 0 && !session.lockedAt) {
       Alert.alert(
         "Regenerate join code?",
-        "Students already in the lobby will need the new code or QR after regeneration.",
+        "Students already in the lobby will need the new code.",
         [
           { text: "Cancel", style: "cancel" },
-          {
-            text: "Regenerate",
-            style: "destructive",
-            onPress: () => {
-              void regenerateCode(canSyncImmediately);
-            },
-          },
+          { text: "Regenerate", style: "destructive", onPress: () => { void regenerateCode(canSyncImmediately); } },
         ]
       );
       return;
     }
-
-    try {
-      await regenerateCode(canSyncImmediately);
-    } catch {
-      // Error state is surfaced in the screen body.
-    }
+    try { await regenerateCode(canSyncImmediately); } catch {}
   };
 
   const handleBeginClass = async () => {
     try {
       const nextSession = await beginClass(canSyncImmediately);
-      router.replace({
-        pathname: "/session/live",
-        params: { sessionId: nextSession.id },
-      });
-    } catch {
-      // Error state is surfaced in the screen body.
-    }
+      router.replace({ pathname: "/session/live", params: { sessionId: nextSession.id } });
+    } catch {}
   };
-
-  const statusBadge =
-    session.mode === "offline"
-      ? { label: "Offline hotspot", variant: "warning" as const }
-      : supabaseReachable && displayedRemoteState === "live"
-        ? { label: "Online realtime", variant: "success" as const }
-        : { label: "Online queued", variant: "info" as const };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <View style={[styles.content, isCompact && styles.contentCompact]}>
-        <View style={[styles.qrColumn, isCompact && styles.qrColumnCompact]}>
-          <View style={styles.lobbyHeader}>
-            <Badge label="Session Lobby" variant="neutral" size="md" style={styles.kicker} />
-            <Text style={styles.title}>Students can join now</Text>
-            <Text style={styles.subtitle}>
-              Keep the QR visible, watch live joins come in, then begin class when the room is ready.
-            </Text>
-          </View>
+      <Sentry.TimeToInitialDisplay record />
 
-          <View style={styles.qrShell}>
+      {/* Top bar */}
+      <View style={styles.topBar}>
+        <View style={styles.topBarLeft}>
+          <Badge
+            label="Session Lobby"
+            variant={session.mode === "offline" ? "warning" : "success"}
+            size="md"
+          />
+          <Text style={styles.topBarTitle}>{session.subject} — {session.topic}</Text>
+        </View>
+        <View style={styles.topBarRight}>
+          {/* Network quality indicator */}
+          <View style={styles.signalBars}>
+            {[0, 1, 2, 3].map((bar) => (
+              <View
+                key={bar}
+                style={[
+                  styles.signalBar,
+                  { height: 10 + bar * 5 },
+                  bar < quality.activeBars && { backgroundColor: quality.color },
+                ]}
+              />
+            ))}
+          </View>
+          <StatusChip status={isConnected ? "online" : "offline"} />
+        </View>
+      </View>
+
+      <View style={styles.content}>
+        {/* Left: QR + Code */}
+        <View style={styles.qrColumn}>
+          <View style={styles.qrArea}>
+            {/* QR card with subtle shadow */}
             <View style={styles.qrCard}>
               <QRCode
                 value={session.qrPayload}
@@ -268,51 +174,75 @@ export default function SessionLobbyScreen() {
                 backgroundColor={colors.surface.card}
               />
             </View>
-          </View>
 
-          <View style={styles.codeRow}>
-            <View>
-              <Text style={styles.codeLabel}>4-digit join code</Text>
+            {/* Join code */}
+            <View style={styles.codeBlock}>
               <Text style={styles.codeValue}>{formatJoinCode(session.joinCode)}</Text>
             </View>
-            <Badge label={statusBadge.label} variant={statusBadge.variant} size="md" />
+            <Text style={styles.codeHint}>Share this code with students</Text>
           </View>
 
-          <Text style={styles.joinUrl} numberOfLines={1}>
-            {session.qrPayload}
-          </Text>
+          {/* Metrics */}
+          <View style={styles.metricsRow}>
+            <Card variant="default" padding="lg" style={styles.metricCard}>
+              <Text style={styles.metricLabel}>STUDENTS JOINED</Text>
+              <Text style={styles.metricValue}>{session.participantCount}</Text>
+              <Text style={styles.metricSupporting}>
+                {displayedRemoteState === "live" ? "Updating live" : "Waiting for joins"}
+              </Text>
+            </Card>
+            <Card variant="default" padding="lg" style={styles.metricCard}>
+              <Text style={styles.metricLabel}>NETWORK QUALITY</Text>
+              <View style={styles.metricSignalRow}>
+                <View style={styles.metricSignalBars}>
+                  {[0, 1, 2, 3].map((bar) => (
+                    <View
+                      key={bar}
+                      style={[
+                        styles.metricSignalBar,
+                        { height: 8 + bar * 4 },
+                        bar < quality.activeBars && { backgroundColor: quality.color },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.metricValue}>{quality.label}</Text>
+              </View>
+            </Card>
+          </View>
+
+          {/* Action buttons */}
+          <View style={styles.actionRow}>
+            <Button
+              title="Begin Class"
+              onPress={handleBeginClass}
+              loading={isStartingClass}
+              size="lg"
+              style={styles.beginButton}
+            />
+            <Button
+              title={session.lockedAt ? "Unlock" : "Lock Lobby"}
+              onPress={handleLockPress}
+              loading={isLocking}
+              variant="outline"
+              size="lg"
+              style={styles.actionButton}
+            />
+            <Button
+              title="Regenerate Code"
+              onPress={handleRegeneratePress}
+              loading={isRegeneratingCode}
+              variant="ghost"
+              size="lg"
+              style={styles.actionButton}
+            />
+          </View>
         </View>
 
-        <View style={styles.sideColumn}>
-          <View style={styles.topBadges}>
-            <StatusChip status={isConnected ? "online" : "offline"} />
-            <Badge
-              label={session.lockedAt ? "Session locked" : "Open for joins"}
-              variant={session.lockedAt ? "error" : "success"}
-              size="md"
-            />
-            <Badge
-              label={session.mode === "offline" ? "Hotspot" : "Supabase"}
-              variant={session.mode === "offline" ? "warning" : "primary"}
-              size="md"
-            />
-          </View>
-
-          <View style={styles.metricsGrid}>
-            <MetricCard
-              label="Join count"
-              value={`${session.participantCount}`}
-              supporting={displayedRemoteState === "live" ? "Updating live from Supabase" : "Waiting for joins"}
-            />
-            <MetricCard
-              label="Lost threshold"
-              value={`${session.lostThreshold}%`}
-              supporting="Teacher intervention trigger"
-            />
-          </View>
-
-          <Card variant="default" padding="lg" style={styles.panel}>
-            <Text style={styles.panelTitle}>Class setup</Text>
+        {/* Right: Session details */}
+        <View style={styles.detailColumn}>
+          <Card variant="tonal" padding="lg" style={styles.detailCard}>
+            <Text style={styles.detailTitle}>Class Setup</Text>
             <View style={styles.detailGrid}>
               <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Subject</Text>
@@ -330,31 +260,59 @@ export default function SessionLobbyScreen() {
                 <Text style={styles.detailLabel}>Language</Text>
                 <Text style={styles.detailValue}>{session.language}</Text>
               </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Lost Threshold</Text>
+                <Text style={styles.detailValue}>{session.lostThreshold}%</Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Mode</Text>
+                <Text style={styles.detailValue}>
+                  {session.mode === "offline" ? "Offline Hotspot" : "Online Realtime"}
+                </Text>
+              </View>
             </View>
 
             {session.lessonPlanSeed ? (
               <View style={styles.seedBlock}>
-                <Text style={styles.detailLabel}>Lesson seed</Text>
+                <Text style={styles.detailLabel}>Lesson Seed</Text>
                 <Text style={styles.seedText}>{session.lessonPlanSeed}</Text>
               </View>
             ) : null}
           </Card>
 
-          <Card variant="default" padding="lg" style={styles.panel}>
-            <NetworkIndicator
-              isConnected={isConnected}
-              connectionQuality={connectionQuality}
-              remoteState={displayedRemoteState}
-            />
-            {!canSyncImmediately ? (
-              <Text style={styles.offlineNotice}>
-                {session.mode === "offline"
-                  ? "Offline hotspot mode keeps the lobby local-first. Realtime join counts reactivate when you create an online session."
-                  : !hasSupabaseConfig
-                    ? "Supabase credentials are not configured, so this lobby is running from local session storage only."
-                    : "Network connectivity is limited right now, so session updates are queued locally until the connection recovers."}
-              </Text>
-            ) : null}
+          <Card variant="tonal" padding="lg" style={styles.detailCard}>
+            <Text style={styles.detailTitle}>Network Status</Text>
+            <View style={styles.statusRows}>
+              <View style={styles.statusRow}>
+                <Text style={styles.statusLabel}>Connection</Text>
+                <StatusChip status={isConnected ? "online" : "offline"} />
+              </View>
+              <View style={styles.statusRow}>
+                <Text style={styles.statusLabel}>Realtime</Text>
+                <Badge
+                  label={
+                    displayedRemoteState === "live" ? "Live"
+                      : displayedRemoteState === "connecting" ? "Connecting"
+                      : displayedRemoteState === "disabled" ? "Off"
+                      : "Degraded"
+                  }
+                  variant={
+                    displayedRemoteState === "live" ? "success"
+                      : displayedRemoteState === "connecting" ? "info"
+                      : "neutral"
+                  }
+                  size="sm"
+                />
+              </View>
+              <View style={styles.statusRow}>
+                <Text style={styles.statusLabel}>Session</Text>
+                <Badge
+                  label={session.lockedAt ? "Locked" : "Open"}
+                  variant={session.lockedAt ? "error" : "success"}
+                  size="sm"
+                />
+              </View>
+            </View>
           </Card>
 
           {error ? (
@@ -363,40 +321,12 @@ export default function SessionLobbyScreen() {
             </View>
           ) : null}
 
-          <View style={styles.actionRow}>
-            <Button
-              title={session.lockedAt ? "Unlock Session" : "Lock Session"}
-              onPress={handleLockPress}
-              loading={isLocking}
-              variant={session.lockedAt ? "secondary" : "outline"}
-              size="lg"
-              style={styles.actionButton}
-            />
-            <Button
-              title="Regenerate Code"
-              onPress={handleRegeneratePress}
-              loading={isRegeneratingCode}
-              variant="outline"
-              size="lg"
-              style={styles.actionButton}
-            />
-          </View>
-
-          <Button
-            title="Begin Class"
-            onPress={handleBeginClass}
-            loading={isStartingClass}
-            size="lg"
-            fullWidth
-            style={styles.beginButton}
-          />
-
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => router.replace("/(tabs)")}
-            style={styles.secondaryLink}
+            style={styles.backLink}
           >
-            <Text style={styles.secondaryLinkText}>Return to teacher home</Text>
+            <Text style={styles.backLinkText}>← Return to home</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -407,116 +337,158 @@ export default function SessionLobbyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.dark.background,
+    backgroundColor: colors.surface.background,
   },
+
+  // Top bar
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.base,
+  },
+  topBarLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  topBarTitle: {
+    ...textStyles.headingSmall,
+    color: colors.text.primary,
+  },
+  topBarRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  signalBars: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  signalBar: {
+    width: 6,
+    borderRadius: 2,
+    backgroundColor: colors.surface.border,
+  },
+
+  // Content
   content: {
     flex: 1,
     flexDirection: "row",
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl,
     gap: spacing.xl,
-    padding: spacing.xl,
   },
-  contentCompact: {
-    flexDirection: "column",
-  },
+
+  // QR Column
   qrColumn: {
-    flex: 1.15,
-    gap: spacing.base,
-  },
-  qrColumnCompact: {
-    flex: 0,
-  },
-  sideColumn: {
-    flex: 0.95,
-    gap: spacing.base,
-  },
-  lobbyHeader: {
-    gap: spacing.sm,
-  },
-  kicker: {
-    alignSelf: "flex-start",
-  },
-  title: {
-    ...textStyles.displayMedium,
-    color: colors.text.inverse,
-  },
-  subtitle: {
-    ...textStyles.bodyLarge,
-    color: colors.dark.textSecondary,
-    maxWidth: 720,
-  },
-  qrShell: {
-    flex: 1,
-    minHeight: 360,
-    alignItems: "center",
+    flex: 1.2,
     justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.xl,
+  },
+  qrArea: {
+    alignItems: "center",
+    gap: spacing.lg,
   },
   qrCard: {
     padding: spacing.xl,
-    borderRadius: 32,
+    borderRadius: borderRadius["3xl"],
     backgroundColor: colors.surface.card,
-    borderWidth: 6,
-    borderColor: "#E2E8F0",
+    ...shadows.lg,
   },
-  codeRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: spacing.base,
-  },
-  codeLabel: {
-    ...textStyles.label,
-    color: colors.dark.textSecondary,
-    marginBottom: spacing.xxs,
+  codeBlock: {
+    backgroundColor: colors.surface.card,
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing["2xl"],
+    paddingVertical: spacing.base,
+    borderWidth: 2,
+    borderColor: colors.surface.border,
+    borderStyle: "dashed",
   },
   codeValue: {
-    ...textStyles.metric,
-    color: colors.text.inverse,
-    letterSpacing: 6,
+    fontSize: 36,
+    fontWeight: "800",
+    color: colors.text.primary,
+    letterSpacing: 4,
+    fontVariant: ["tabular-nums"],
   },
-  joinUrl: {
+  codeHint: {
     ...textStyles.bodySmall,
-    color: colors.dark.textSecondary,
+    color: colors.text.tertiary,
   },
-  topBadges: {
+
+  // Metrics
+  metricsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  metricsGrid: {
-    flexDirection: "row",
-    gap: spacing.base,
+    gap: spacing.md,
+    width: "100%",
+    maxWidth: 480,
   },
   metricCard: {
     flex: 1,
-    backgroundColor: colors.dark.surface,
-    borderColor: colors.dark.surfaceLight,
+    borderRadius: borderRadius.xl,
   },
   metricLabel: {
-    ...textStyles.label,
-    color: colors.dark.textSecondary,
-    marginBottom: spacing.xs,
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
   },
   metricValue: {
-    ...textStyles.metric,
-    color: colors.text.inverse,
+    ...textStyles.displayMedium,
+    color: colors.text.primary,
   },
   metricSupporting: {
     ...textStyles.bodySmall,
-    color: colors.dark.textSecondary,
+    color: colors.text.secondary,
     marginTop: spacing.xs,
   },
-  panel: {
-    backgroundColor: colors.dark.surface,
-    borderColor: colors.dark.surfaceLight,
+  metricSignalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
   },
-  panelTitle: {
+  metricSignalBars: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  metricSignalBar: {
+    width: 8,
+    borderRadius: 2,
+    backgroundColor: colors.surface.border,
+  },
+
+  // Actions
+  actionRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    width: "100%",
+    maxWidth: 480,
+  },
+  beginButton: {
+    flex: 2,
+  },
+  actionButton: {
+    flex: 1,
+  },
+
+  // Detail Column
+  detailColumn: {
+    flex: 0.85,
+    gap: spacing.base,
+  },
+  detailCard: {
+    borderRadius: borderRadius.xl,
+  },
+  detailTitle: {
     ...textStyles.headingSmall,
-    color: colors.text.inverse,
+    color: colors.text.primary,
     marginBottom: spacing.base,
-  },
-  panelText: {
-    ...textStyles.bodySmall,
-    color: colors.dark.textSecondary,
   },
   detailGrid: {
     flexDirection: "row",
@@ -524,92 +496,62 @@ const styles = StyleSheet.create({
     gap: spacing.base,
   },
   detailItem: {
-    width: "47%",
+    width: "46%",
     gap: spacing.xxs,
   },
   detailLabel: {
-    ...textStyles.label,
-    color: colors.dark.textSecondary,
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   detailValue: {
-    ...textStyles.bodyLarge,
-    color: colors.text.inverse,
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+    fontWeight: "500",
   },
   seedBlock: {
     marginTop: spacing.lg,
     gap: spacing.sm,
   },
   seedText: {
-    ...textStyles.bodyMedium,
-    color: colors.dark.text,
-    lineHeight: 24,
-  },
-  networkBlock: {
-    gap: spacing.base,
-  },
-  networkHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: spacing.base,
-  },
-  networkMeterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.base,
-  },
-  networkBars: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.xs,
-  },
-  networkBar: {
-    width: 16,
-    borderRadius: borderRadius.sm,
-    backgroundColor: "#3B3F67",
-  },
-  networkBarActive: {
-    backgroundColor: colors.status.success,
-  },
-  networkBarInactive: {
-    backgroundColor: "#475569",
-  },
-  networkMeterValue: {
-    ...textStyles.headingSmall,
-    color: colors.text.inverse,
-  },
-  offlineNotice: {
     ...textStyles.bodySmall,
-    color: colors.dark.textSecondary,
-    marginTop: spacing.base,
+    color: colors.text.secondary,
+    lineHeight: 20,
   },
+
+  // Status
+  statusRows: {
+    gap: spacing.md,
+  },
+  statusRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  statusLabel: {
+    ...textStyles.bodyMedium,
+    color: colors.text.secondary,
+  },
+
+  // Error
   errorBox: {
-    backgroundColor: "rgba(239, 68, 68, 0.16)",
+    backgroundColor: colors.status.errorBg,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
   },
   errorText: {
     ...textStyles.bodySmall,
-    color: "#FCA5A5",
+    color: "#991B1B",
   },
-  actionRow: {
-    flexDirection: "row",
-    gap: spacing.base,
-  },
-  actionButton: {
-    flex: 1,
-  },
-  beginButton: {
-    backgroundColor: colors.primary[500],
-    borderColor: colors.primary[500],
-  },
-  secondaryLink: {
+
+  // Back link
+  backLink: {
     alignSelf: "center",
     paddingVertical: spacing.sm,
   },
-  secondaryLinkText: {
+  backLinkText: {
     ...textStyles.bodyMedium,
-    color: colors.dark.textSecondary,
+    color: colors.text.secondary,
   },
 });

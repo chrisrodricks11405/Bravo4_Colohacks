@@ -11,8 +11,8 @@ import { colors, spacing, borderRadius, shadows } from "../../theme";
 interface CardProps {
   children: React.ReactNode;
   onPress?: () => void;
-  variant?: "default" | "elevated" | "outlined";
-  padding?: "none" | "sm" | "md" | "lg";
+  variant?: "default" | "elevated" | "outlined" | "glass" | "dark" | "tonal";
+  padding?: "none" | "sm" | "md" | "lg" | "xl";
   style?: StyleProp<ViewStyle>;
 }
 
@@ -47,7 +47,6 @@ export function Card({
 
 const styles = StyleSheet.create({
   base: {
-    backgroundColor: colors.surface.card,
     borderRadius: borderRadius.xl,
     overflow: "hidden",
   },
@@ -55,22 +54,35 @@ const styles = StyleSheet.create({
 
 const variantStyles: Record<string, ViewStyle> = {
   default: {
+    backgroundColor: colors.surface.card,
     ...shadows.sm,
-    borderWidth: 1,
-    borderColor: colors.surface.borderLight,
   },
   elevated: {
+    backgroundColor: colors.surface.card,
     ...shadows.lg,
   },
   outlined: {
+    backgroundColor: colors.surface.card,
     borderWidth: 1,
-    borderColor: colors.surface.border,
+    borderColor: colors.surface.borderGhost,
+  },
+  glass: {
+    backgroundColor: colors.glass.frosted,
+    ...shadows.md,
+  },
+  dark: {
+    backgroundColor: colors.dark.background,
+    ...shadows.lg,
+  },
+  tonal: {
+    backgroundColor: colors.surface.backgroundAlt,
   },
 };
 
 const paddingStyles: Record<string, ViewStyle> = {
   none: {},
   sm: { padding: spacing.md },
-  md: { padding: spacing.base },
+  md: { padding: spacing.lg },
   lg: { padding: spacing.xl },
+  xl: { padding: spacing["2xl"] },
 };
