@@ -1,6 +1,5 @@
 import type {
   AIProvider,
-  VoiceProvider,
   AISessionSummary,
   ClusterContext,
   ReteachPack,
@@ -8,6 +7,9 @@ import type {
   AISessionStarter,
   SessionSummaryAIInput,
   AIWeeklyCoaching,
+  TeacherVoicePollContext,
+  VoiceReflectionContext,
+  VoiceReflectionPlan,
   WeeklyHeatmapCell,
   WeeklyInsightAggregate,
   WeeklyInterventionTrend,
@@ -70,6 +72,146 @@ function formatInterventionHandle(value?: string) {
   }
 
   return value.replace(/_/g, " ");
+}
+
+function normalizePrompt(prompt: string) {
+  return prompt.replace(/\s+/g, " ").trim();
+}
+
+function buildTeacherVoicePoll(
+  prompt: string,
+  context: TeacherVoicePollContext
+): AIQuickPollSuggestion {
+  const normalizedPrompt = normalizePrompt(prompt);
+  const topicHandle = context.topic.trim() || context.subject.trim() || "today's idea";
+  const question =
+    normalizedPrompt.length === 0
+      ? `Quick check on ${topicHandle}: which option best matches your understanding right now?`
+      : /[?!.]$/.test(normalizedPrompt)
+        ? normalizedPrompt
+        : `${normalizedPrompt}?`;
+
+  return {
+    question,
+    options: [
+      "I can answer it and explain why.",
+      "I can narrow it down but need one hint.",
+      `I remember part of ${topicHandle} but not the full method.`,
+      "I need a short reteach before I can answer.",
+    ],
+    correctIndex: 0,
+    rationale:
+      "This voice-to-poll draft separates confident understanding from partial recall and reteach need so the teacher can review, edit, and push quickly.",
+  };
+}
+
+function splitTranscriptSentences(transcript: string) {
+  return transcript
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function buildVoiceReflectionPlan(
+  transcript: string,
+  context: VoiceReflectionContext
+): VoiceReflectionPlan {
+  const normalizedTranscript = normalizePrompt(transcript);
+
+  if (!normalizedTranscript) {
+    return {
+      summary: "",
+      actions: [],
+      source: "fallback",
+    };
+  }
+
+  const topicHandle = context.topic.trim() || "the topic";
+  const defaultOpening =
+    context.suggestedNextActivity?.trim() ||
+    `Open the next ${context.subject} lesson with a two-minute recap of ${topicHandle}.`;
+
+  const actionCandidates = [
+    {
+      test: /(slow|pace|rushed|too fast|speed)/i,
+      title: "Slow the opener",
+      detail: `Reopen ${topicHandle} with a slower first example and a short pause before students answer.`,
+      timing: "opening" as const,
+    },
+    {
+      test: /(example|worked example|model|show)/i,
+      title: "Lead with one more example",
+      detail: `Start with one fresh worked example on ${topicHandle} before moving into independent practice.`,
+      timing: "opening" as const,
+    },
+    {
+      test: /(language|wording|term|vocab|translation|hindi|marathi|kannada|english)/i,
+      title: "Pre-teach vocabulary",
+      detail: "Restate the key terms in simpler classroom language and ask one student to paraphrase the idea.",
+      timing: "opening" as const,
+    },
+    {
+      test: /(check|poll|thumb|confidence|understanding)/i,
+      title: "Add a fast check-in",
+      detail: "Run a 30-second confidence check after the first explanation so confusion surfaces earlier.",
+      timing: "check_in" as const,
+    },
+    {
+      test: /(notation|symbol|sign)/i,
+      title: "Review notation explicitly",
+      detail: "Contrast the correct notation with the most likely mistake before practice begins.",
+      timing: "opening" as const,
+    },
+    {
+      test: /(prerequisite|foundation|basics|prior knowledge)/i,
+      title: "Rebuild the prerequisite",
+      detail: `Spend the first minute reconnecting the prerequisite idea behind ${topicHandle}.`,
+      timing: "opening" as const,
+    },
+  ];
+
+  const actions: VoiceReflectionPlan["actions"] = actionCandidates
+    .filter((candidate) => candidate.test.test(normalizedTranscript))
+    .slice(0, 3)
+    .map((candidate, index) => ({
+      id: `reflection_action_${index + 1}`,
+      title: candidate.title,
+      detail: candidate.detail,
+      timing: candidate.timing,
+    }));
+
+  if (actions.length === 0) {
+    actions.push(
+      {
+        id: "reflection_action_1",
+        title: "Reopen with a clear recap",
+        detail: defaultOpening,
+        timing: "opening",
+      },
+      {
+        id: "reflection_action_2",
+        title: "Check understanding earlier",
+        detail: "Add a fast poll or verbal check after the first worked step instead of waiting until practice.",
+        timing: "check_in",
+      },
+      {
+        id: "reflection_action_3",
+        title: "Capture one follow-up note",
+        detail: `Watch whether the same confusion returns during the next ${context.gradeClass} lesson and log it if it does.`,
+        timing: "follow_up",
+      }
+    );
+  }
+
+  const summary =
+    splitTranscriptSentences(normalizedTranscript).slice(0, 2).join(" ") ||
+    `Focus the next class on a cleaner opening and earlier check for ${topicHandle}.`;
+
+  return {
+    summary,
+    actions,
+    source: "fallback",
+  };
 }
 
 function buildSummaryNarrative(input: SessionSummaryAIInput): AISessionSummary {
@@ -255,6 +397,13 @@ export class StubAIProvider implements AIProvider {
     };
   }
 
+  async generateTeacherVoicePoll(
+    prompt: string,
+    context: TeacherVoicePollContext
+  ): Promise<AIQuickPollSuggestion> {
+    return buildTeacherVoicePoll(prompt, context);
+  }
+
   async generateSessionStarter(
     _topic: string,
     _subject: string,
@@ -270,6 +419,13 @@ export class StubAIProvider implements AIProvider {
     summaryInput: SessionSummaryAIInput
   ): Promise<AISessionSummary> {
     return buildSummaryNarrative(summaryInput);
+  }
+
+  async structureVoiceReflection(
+    transcript: string,
+    context: VoiceReflectionContext
+  ): Promise<VoiceReflectionPlan> {
+    return buildVoiceReflectionPlan(transcript, context);
   }
 
   async generateWeeklyInsight(summaryData: unknown): Promise<AIWeeklyCoaching> {
@@ -292,6 +448,34 @@ class EdgeFunctionAIProvider implements AIProvider {
       body: {
         action,
         clusterContext,
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data || typeof data !== "object" || !("result" in data)) {
+      throw new Error("AI provider returned an unexpected response.");
+    }
+
+    return (data as { result: TResponse }).result;
+  }
+
+  private async invokeVoicePoll<TResponse>(
+    action: "generateTeacherVoicePoll",
+    prompt: string,
+    promptContext: TeacherVoicePollContext
+  ): Promise<TResponse> {
+    if (!hasSupabaseConfig) {
+      throw new Error("AI provider is unavailable until Supabase is configured.");
+    }
+
+    const { data, error } = await supabase.functions.invoke(teacherAIFunction, {
+      body: {
+        action,
+        prompt,
+        promptContext,
       },
     });
 
@@ -358,6 +542,34 @@ class EdgeFunctionAIProvider implements AIProvider {
     return (data as { result: TResponse }).result;
   }
 
+  private async invokeReflection<TResponse>(
+    action: "structureVoiceReflection",
+    transcript: string,
+    reflectionContext: VoiceReflectionContext
+  ): Promise<TResponse> {
+    if (!hasSupabaseConfig) {
+      throw new Error("AI provider is unavailable until Supabase is configured.");
+    }
+
+    const { data, error } = await supabase.functions.invoke(teacherAIFunction, {
+      body: {
+        action,
+        transcript,
+        reflectionContext,
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data || typeof data !== "object" || !("result" in data)) {
+      throw new Error("AI provider returned an unexpected response.");
+    }
+
+    return (data as { result: TResponse }).result;
+  }
+
   async generateReteachPack(ctx: ClusterContext): Promise<ReteachPack> {
     try {
       return await this.invoke<ReteachPack>("generateReteachPack", ctx);
@@ -371,6 +583,21 @@ class EdgeFunctionAIProvider implements AIProvider {
       return await this.invoke<AIQuickPollSuggestion>("generateQuickPoll", ctx);
     } catch {
       return this.fallbackProvider.generateQuickPoll(ctx);
+    }
+  }
+
+  async generateTeacherVoicePoll(
+    prompt: string,
+    context: TeacherVoicePollContext
+  ): Promise<AIQuickPollSuggestion> {
+    try {
+      return await this.invokeVoicePoll<AIQuickPollSuggestion>(
+        "generateTeacherVoicePoll",
+        prompt,
+        context
+      );
+    } catch {
+      return this.fallbackProvider.generateTeacherVoicePoll(prompt, context);
     }
   }
 
@@ -410,22 +637,21 @@ class EdgeFunctionAIProvider implements AIProvider {
       return this.fallbackProvider.generateSessionSummary(summaryInput);
     }
   }
+
+  async structureVoiceReflection(
+    transcript: string,
+    context: VoiceReflectionContext
+  ): Promise<VoiceReflectionPlan> {
+    try {
+      return await this.invokeReflection<VoiceReflectionPlan>(
+        "structureVoiceReflection",
+        transcript,
+        context
+      );
+    } catch {
+      return this.fallbackProvider.structureVoiceReflection(transcript, context);
+    }
+  }
 }
 
-/**
- * Stub Voice provider — placeholder for voice features.
- * Will be replaced with real provider in Stage 11.
- */
-export class StubVoiceProvider implements VoiceProvider {
-  async transcribe(_audioUri: string): Promise<string> {
-    return "Voice transcription placeholder.";
-  }
-
-  async speak(_text: string, _locale: string): Promise<string> {
-    return "";
-  }
-}
-
-// Default singletons
 export const aiProvider: AIProvider = new EdgeFunctionAIProvider();
-export const voiceProvider: VoiceProvider = new StubVoiceProvider();

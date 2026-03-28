@@ -1,4 +1,11 @@
-export { aiProvider, voiceProvider, StubAIProvider, StubVoiceProvider } from "./ai";
+export { aiProvider, StubAIProvider } from "./ai";
+export {
+  isVoiceProviderConfigured,
+  StubVoiceProvider,
+  voiceProvider,
+  VOICE_LOCALE_OPTIONS,
+  VOICE_TTS_OPTIONS,
+} from "./voice";
 export {
   listRecentSessions,
   upsertRecentSessions,

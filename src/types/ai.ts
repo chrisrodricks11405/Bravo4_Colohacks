@@ -15,6 +15,13 @@ export interface AIQuickPollSuggestion {
   rationale: string;
 }
 
+export interface TeacherVoicePollContext {
+  subject: string;
+  topic: string;
+  language: string;
+  gradeClass?: string;
+}
+
 export interface AISessionStarter {
   likelyMisconceptions: string[];
   starterPoll?: AIQuickPollSuggestion;
@@ -58,18 +65,79 @@ export interface AISessionSummary {
   source: "edge" | "fallback";
 }
 
+export interface VoiceReflectionContext {
+  subject: string;
+  topic: string;
+  gradeClass: string;
+  suggestedNextActivity?: string;
+}
+
+export interface VoiceReflectionAction {
+  id: string;
+  title: string;
+  detail: string;
+  timing: "opening" | "check_in" | "follow_up";
+}
+
+export interface VoiceReflectionPlan {
+  summary: string;
+  actions: VoiceReflectionAction[];
+  source: "edge" | "fallback";
+}
+
+export interface SpokenExplanationAudio {
+  uri: string;
+  mimeType: string;
+  voice?: string;
+  source: "edge" | "fallback";
+}
+
+export interface VoiceProviderCapabilities {
+  available: boolean;
+  transcriptionAvailable: boolean;
+  speechGenerationAvailable: boolean;
+  voices: string[];
+  defaultVoice?: string;
+  reason?: string;
+}
+
+export interface VoiceTranscriptionOptions {
+  locale?: string;
+  hint?: string;
+}
+
+export interface SpokenExplanationOptions {
+  voice?: string;
+}
+
 /** Provider interface — implementations can be swapped */
 export interface AIProvider {
   generateReteachPack(clusterContext: ClusterContext): Promise<ReteachPack>;
   generateQuickPoll(clusterContext: ClusterContext): Promise<AIQuickPollSuggestion>;
+  generateTeacherVoicePoll(
+    prompt: string,
+    context: TeacherVoicePollContext
+  ): Promise<AIQuickPollSuggestion>;
   generateSessionStarter(topic: string, subject: string, language: string): Promise<AISessionStarter>;
   generateSessionSummary(summaryInput: SessionSummaryAIInput): Promise<AISessionSummary>;
+  structureVoiceReflection(
+    transcript: string,
+    context: VoiceReflectionContext
+  ): Promise<VoiceReflectionPlan>;
   generateWeeklyInsight(summaryData: unknown): Promise<AIWeeklyCoaching>;
 }
 
 export interface VoiceProvider {
-  transcribe(audioUri: string): Promise<string>;
-  speak(text: string, locale: string): Promise<string>;
+  getCapabilities(): VoiceProviderCapabilities;
+  transcribeTeacherVoicePrompt(
+    audioUri: string,
+    options?: VoiceTranscriptionOptions
+  ): Promise<string>;
+  generateSpokenExplanation(
+    text: string,
+    locale: string,
+    options?: SpokenExplanationOptions
+  ): Promise<SpokenExplanationAudio>;
 }
 
 export interface ClusterContext {

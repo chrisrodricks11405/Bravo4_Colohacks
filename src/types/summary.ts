@@ -2,7 +2,10 @@ import { ConfusionTrendPoint } from "./pulse";
 import { MisconceptionClusterSummary, ReasonChip } from "./question";
 import { InterventionActionPayload } from "./intervention";
 import { LessonMarker } from "./lesson";
-import { AIWeeklyCoaching } from "./ai";
+import {
+  AIWeeklyCoaching,
+  VoiceReflectionAction,
+} from "./ai";
 
 /** Session summary generated at end of class */
 export interface SessionSummaryPayload {
@@ -31,6 +34,9 @@ export interface SessionSummaryPayload {
   suggestedNextActivity?: string;
   voiceReflectionUri?: string;
   voiceReflectionTranscript?: string;
+  voiceReflectionSummary?: string;
+  voiceReflectionActions: VoiceReflectionAction[];
+  voiceReflectionActionSource?: "edge" | "fallback";
   summarySource: "edge" | "fallback";
   synced?: boolean;
   createdAt: string;

@@ -9,6 +9,7 @@ interface AuthContextValue {
   isLoading: boolean;
   isConfigured: boolean;
   signInWithPassword: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
   sendMagicLink: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   isConfigured: hasSupabaseConfig,
   signInWithPassword: async () => undefined,
+  signUp: async () => undefined,
   sendMagicLink: async () => undefined,
   signOut: async () => undefined,
 });
@@ -62,6 +64,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isConfigured: hasSupabaseConfig,
     signInWithPassword: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+    },
+    signUp: async (email, password) => {
+      const { error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
       });

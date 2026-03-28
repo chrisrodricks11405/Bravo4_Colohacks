@@ -22,12 +22,17 @@ interface QuickPollPanelProps {
   editingSource: QuickPollPayload["source"];
   isClosing: boolean;
   isGeneratingAI: boolean;
+  isProcessingVoicePrompt: boolean;
   isPushing: boolean;
+  isRecordingVoicePrompt: boolean;
   isSavingDraft: boolean;
   pollDistribution: PollDistributionSnapshot | null;
   pollHistory: QuickPollPayload[];
   selectedPoll: QuickPollPayload | null;
   selectedPollId?: string | null;
+  voiceError?: string | null;
+  voiceToPollEnabled: boolean;
+  voiceTranscript?: string;
   onAddOption: () => void;
   onChangeOption: (index: number, nextValue: string) => void;
   onChangeQuestion: (nextValue: string) => void;
@@ -39,6 +44,8 @@ interface QuickPollPanelProps {
   onResetComposer: () => void;
   onSaveDraft: () => void;
   onSelectPoll: (pollId: string) => void;
+  onStartVoicePrompt: () => void;
+  onStopVoicePrompt: () => void;
 }
 
 function formatStatus(status: QuickPollPayload["status"]) {
@@ -74,12 +81,17 @@ export function QuickPollPanel({
   editingSource,
   isClosing,
   isGeneratingAI,
+  isProcessingVoicePrompt,
   isPushing,
+  isRecordingVoicePrompt,
   isSavingDraft,
   pollDistribution,
   pollHistory,
   selectedPoll,
   selectedPollId,
+  voiceError,
+  voiceToPollEnabled,
+  voiceTranscript,
   onAddOption,
   onChangeOption,
   onChangeQuestion,
@@ -91,6 +103,8 @@ export function QuickPollPanel({
   onResetComposer,
   onSaveDraft,
   onSelectPoll,
+  onStartVoicePrompt,
+  onStopVoicePrompt,
 }: QuickPollPanelProps) {
   return (
     <Card variant="default" padding="lg" style={styles.card}>
@@ -120,6 +134,52 @@ export function QuickPollPanel({
               ? `Focused cluster: ${clusterTitle}`
               : "Manual polls are ready even before a cluster forms."}
           </Text>
+
+          {voiceToPollEnabled || voiceTranscript ? (
+            <View style={styles.voiceCard}>
+              <View style={styles.voiceHeader}>
+                <View style={styles.voiceHeaderCopy}>
+                  <Text style={styles.voiceTitle}>Voice to poll</Text>
+                  <Text style={styles.voiceHint}>
+                    Speak a question, let AI structure it into an MCQ draft, then review before pushing.
+                  </Text>
+                </View>
+                <Badge
+                  label={voiceTranscript ? "Transcript ready" : "Hands-free"}
+                  variant={voiceTranscript ? "success" : "info"}
+                  size="sm"
+                />
+              </View>
+
+              <View style={styles.voiceActions}>
+                <Button
+                  title={isRecordingVoicePrompt ? "Recording..." : "Start speaking"}
+                  onPress={onStartVoicePrompt}
+                  variant={isRecordingVoicePrompt ? "danger" : "secondary"}
+                  size="sm"
+                  disabled={isRecordingVoicePrompt || isProcessingVoicePrompt}
+                />
+                <Button
+                  title={
+                    isProcessingVoicePrompt ? "Structuring..." : "Stop & structure"
+                  }
+                  onPress={onStopVoicePrompt}
+                  variant="outline"
+                  size="sm"
+                  disabled={!isRecordingVoicePrompt || isProcessingVoicePrompt}
+                />
+              </View>
+
+              {voiceError ? <Text style={styles.voiceError}>{voiceError}</Text> : null}
+
+              {voiceTranscript ? (
+                <View style={styles.transcriptCard}>
+                  <Text style={styles.transcriptLabel}>Latest transcript</Text>
+                  <Text style={styles.transcriptText}>{voiceTranscript}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Question</Text>
@@ -441,6 +501,57 @@ const styles = StyleSheet.create({
   },
   fieldGroup: {
     gap: spacing.sm,
+  },
+  voiceCard: {
+    padding: spacing.base,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.primary[100],
+    backgroundColor: colors.primary[50],
+    gap: spacing.sm,
+  },
+  voiceHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.base,
+    alignItems: "flex-start",
+  },
+  voiceHeaderCopy: {
+    flex: 1,
+  },
+  voiceTitle: {
+    ...textStyles.headingSmall,
+    color: colors.text.primary,
+  },
+  voiceHint: {
+    ...textStyles.bodySmall,
+    color: colors.text.secondary,
+    marginTop: spacing.xxs,
+  },
+  voiceActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  voiceError: {
+    ...textStyles.bodySmall,
+    color: colors.status.error,
+  },
+  transcriptCard: {
+    padding: spacing.base,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface.card,
+    borderWidth: 1,
+    borderColor: colors.surface.border,
+    gap: spacing.xs,
+  },
+  transcriptLabel: {
+    ...textStyles.label,
+    color: colors.text.tertiary,
+  },
+  transcriptText: {
+    ...textStyles.bodySmall,
+    color: colors.text.primary,
   },
   fieldLabel: {
     ...textStyles.label,

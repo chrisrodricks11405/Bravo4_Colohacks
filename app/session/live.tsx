@@ -9,6 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { Audio } from "expo-av";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StateScreen } from "../../src/components/app/StateScreen";
@@ -26,10 +27,13 @@ import {
 import { Badge, BottomSheet, Button, Card, StatusChip } from "../../src/components/ui";
 import { useLiveDashboard } from "../../src/hooks/useLiveDashboard";
 import { useLivePolls } from "../../src/hooks/useLivePolls";
+import { useAudioPlayback } from "../../src/hooks/useAudioPlayback";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useSessionHydration } from "../../src/providers";
-import { aiProvider, getPersistedSession } from "../../src/services";
-import { useNetworkStore, useSessionStore } from "../../src/stores";
+import { aiProvider, getPersistedSession, voiceProvider } from "../../src/services";
+import { startAudioRecording, stopAudioRecording } from "../../src/services/audioSession";
+import { useNetworkStore, usePreferencesStore, useSessionStore } from "../../src/stores";
+import { useShallow } from "zustand/react/shallow";
 import type {
   AIQuickPollSuggestion,
   ClusterStatus,
@@ -136,14 +140,16 @@ function getInitialPollComposerState() {
     rationale: undefined as string | undefined,
     clusterId: undefined as string | undefined,
     clusterTitle: undefined as string | undefined,
+    voiceTranscript: "",
   };
 }
 
 function buildDraftInputFromSuggestion(args: {
   suggestion: AIQuickPollSuggestion;
   cluster?: MisconceptionClusterSummary | null;
+  transcript?: string;
 }) {
-  const { cluster, suggestion } = args;
+  const { cluster, suggestion, transcript } = args;
 
   return {
     question: suggestion.question,
@@ -153,6 +159,7 @@ function buildDraftInputFromSuggestion(args: {
     rationale: suggestion.rationale,
     clusterId: cluster?.id,
     clusterTitle: cluster?.title,
+    voiceTranscript: transcript ?? "",
   };
 }
 
@@ -345,10 +352,18 @@ export default function LiveDashboardScreen() {
   const isConnected = useNetworkStore((state) => state.isConnected);
   const connectionQuality = useNetworkStore((state) => state.connectionQuality);
   const supabaseReachable = useNetworkStore((state) => state.supabaseReachable);
+  const voiceServiceReachable = useNetworkStore((state) => state.voiceServiceReachable);
   const networkMode = useNetworkStore((state) => state.mode);
   const pendingSyncCount = useNetworkStore((state) => state.pendingSyncCount);
   const syncInProgress = useNetworkStore((state) => state.syncInProgress);
   const syncProgress = useNetworkStore((state) => state.syncProgress);
+  const preferences = usePreferencesStore(useShallow((state) => ({
+    aiProviderEnabled: state.aiProviderEnabled,
+    defaultLanguage: state.defaultLanguage,
+    ttsLocale: state.ttsLocale,
+    ttsVoice: state.ttsVoice,
+    voiceEnabled: state.voiceEnabled,
+  })));
 
   const [resolvedSession, setResolvedSession] = useState<SessionMeta | null>(
     persistedSession
@@ -472,9 +487,29 @@ export default function LiveDashboardScreen() {
   const [isGeneratingPack, setIsGeneratingPack] = useState(false);
   const [isGeneratingAIPoll, setIsGeneratingAIPoll] = useState(false);
   const [pollComposer, setPollComposer] = useState(getInitialPollComposerState);
+  const [voicePromptRecording, setVoicePromptRecording] = useState<Audio.Recording | null>(null);
+  const [isRecordingVoicePrompt, setIsRecordingVoicePrompt] = useState(false);
+  const [isProcessingVoicePrompt, setIsProcessingVoicePrompt] = useState(false);
+  const [voicePromptError, setVoicePromptError] = useState<string | null>(null);
+  const {
+    isPlaying: isPlayingAudio,
+    playbackError,
+    play,
+    stop,
+  } = useAudioPlayback();
 
   const focusCluster = selectedCluster ?? activeCluster;
-  const aiAvailable = Boolean(realtimeEnabled);
+  const voiceCapabilities = voiceProvider.getCapabilities();
+  const aiAvailable = Boolean(realtimeEnabled) && preferences.aiProviderEnabled;
+  const voiceCaptureReady =
+    preferences.voiceEnabled &&
+    voiceCapabilities.transcriptionAvailable &&
+    voiceServiceReachable;
+  const voiceToPollEnabled = voiceCaptureReady && preferences.aiProviderEnabled;
+  const voiceTtsReady =
+    preferences.voiceEnabled &&
+    voiceCapabilities.speechGenerationAvailable &&
+    voiceServiceReachable;
   const pendingInterventionCount = interventions.filter(
     (intervention) => intervention.confusionAfter == null
   ).length;
@@ -501,6 +536,8 @@ export default function LiveDashboardScreen() {
   const interventionTimer = interventionWindowStartedAt
     ? formatDuration(now - new Date(interventionWindowStartedAt).getTime())
     : "00:00";
+  const resolvedVoiceLocale =
+    preferences.ttsLocale || resolvedSession?.language || preferences.defaultLanguage || "en-US";
   const remoteMeta = resolvedSession
     ? getRemoteStatusMeta(remoteState, resolvedSession.mode)
     : null;
@@ -565,11 +602,27 @@ export default function LiveDashboardScreen() {
     setReteachPack(null);
   }, [focusCluster?.id]);
 
+  useEffect(() => {
+    return () => {
+      if (voicePromptRecording) {
+        void voicePromptRecording.stopAndUnloadAsync().catch(() => undefined);
+      }
+    };
+  }, [voicePromptRecording]);
+
+  useEffect(() => {
+    if (playbackError) {
+      Alert.alert("Audio playback issue", playbackError);
+    }
+  }, [playbackError]);
+
   const resetPollComposer = () => {
+    setVoicePromptError(null);
     updateComposer(getInitialPollComposerState());
   };
 
   const loadDraftIntoComposer = (poll: QuickPollPayload) => {
+    setVoicePromptError(null);
     updateComposer({
       editingDraftId: poll.id,
       question: poll.question,
@@ -578,6 +631,7 @@ export default function LiveDashboardScreen() {
       rationale: poll.rationale,
       clusterId: poll.clusterId,
       clusterTitle: poll.clusterTitle,
+      voiceTranscript: "",
     });
   };
 
@@ -669,7 +723,9 @@ export default function LiveDashboardScreen() {
       if (!aiAvailable) {
         Alert.alert(
           "AI unavailable",
-          "Reconnect to Supabase Realtime to generate reteach packs."
+          preferences.aiProviderEnabled
+            ? "Reconnect to Supabase Realtime to generate reteach packs."
+            : "Turn AI back on in Settings to generate reteach packs."
         );
         return;
       }
@@ -702,12 +758,43 @@ export default function LiveDashboardScreen() {
     })();
   };
 
+  const handleSpeakReteachCard = (label: string, text: string) => {
+    void (async () => {
+      if (!voiceTtsReady) {
+        Alert.alert(
+          "Voice unavailable",
+          "Turn on voice tools and reconnect to the voice provider to read explanations aloud."
+        );
+        return;
+      }
+
+      try {
+        const spokenExplanation = await voiceProvider.generateSpokenExplanation(
+          text,
+          resolvedVoiceLocale,
+          {
+            voice: preferences.ttsVoice,
+          }
+        );
+
+        await play(spokenExplanation.uri);
+      } catch (actionError) {
+        Alert.alert(
+          `Could not play ${label.toLowerCase()}`,
+          actionError instanceof Error ? actionError.message : "Try again in a moment."
+        );
+      }
+    })();
+  };
+
   const handlePollPress = (clusterOverride?: MisconceptionClusterSummary | null) => {
     void (async () => {
       if (!aiAvailable) {
         Alert.alert(
           "AI unavailable",
-          "Reconnect to Supabase Realtime to generate a poll from the cluster. Manual poll creation still works."
+          preferences.aiProviderEnabled
+            ? "Reconnect to Supabase Realtime to generate a poll from the cluster. Manual poll creation still works."
+            : "Turn AI back on in Settings to generate cluster-based poll drafts."
         );
         return;
       }
@@ -741,6 +828,7 @@ export default function LiveDashboardScreen() {
           rationale: nextDraft.rationale,
           clusterId: nextDraft.clusterId,
           clusterTitle: nextDraft.clusterTitle,
+          voiceTranscript: "",
         });
       } catch (actionError) {
         Alert.alert(
@@ -749,6 +837,83 @@ export default function LiveDashboardScreen() {
         );
       } finally {
         setIsGeneratingAIPoll(false);
+      }
+    })();
+  };
+
+  const handleStartVoicePrompt = () => {
+    void (async () => {
+      if (!voiceToPollEnabled) {
+        Alert.alert(
+          "Voice to poll unavailable",
+          "Turn on AI and voice tools, then reconnect to the voice provider to structure spoken questions into polls."
+        );
+        return;
+      }
+
+      try {
+        setVoicePromptError(null);
+        const recording = await startAudioRecording();
+        setVoicePromptRecording(recording);
+        setIsRecordingVoicePrompt(true);
+      } catch (actionError) {
+        setVoicePromptError(
+          actionError instanceof Error
+            ? actionError.message
+            : "Voice recording could not start."
+        );
+      }
+    })();
+  };
+
+  const handleStopVoicePrompt = () => {
+    void (async () => {
+      if (!voicePromptRecording || !resolvedSession) {
+        return;
+      }
+
+      setIsRecordingVoicePrompt(false);
+      setIsProcessingVoicePrompt(true);
+      setVoicePromptError(null);
+
+      const activeRecording = voicePromptRecording;
+      setVoicePromptRecording(null);
+
+      try {
+        const audioUri = await stopAudioRecording(activeRecording);
+        const transcript = await voiceProvider.transcribeTeacherVoicePrompt(audioUri, {
+          locale: resolvedVoiceLocale,
+          hint: `Short classroom poll prompt for ${resolvedSession.subject} about ${resolvedSession.topic}.`,
+        });
+        const pollSuggestion = await aiProvider.generateTeacherVoicePoll(transcript, {
+          subject: resolvedSession.subject,
+          topic: resolvedSession.topic,
+          language: resolvedSession.language,
+          gradeClass: resolvedSession.gradeClass,
+        });
+        const nextDraft = buildDraftInputFromSuggestion({
+          suggestion: pollSuggestion,
+          transcript,
+        });
+
+        updateComposer({
+          editingDraftId: null,
+          question: nextDraft.question,
+          options: nextDraft.options,
+          source: nextDraft.source,
+          rationale: nextDraft.rationale,
+          clusterId: nextDraft.clusterId,
+          clusterTitle: nextDraft.clusterTitle,
+          voiceTranscript: nextDraft.voiceTranscript,
+        });
+      } catch (actionError) {
+        setVoicePromptError(
+          actionError instanceof Error
+            ? actionError.message
+            : "We could not convert that recording into a poll draft."
+        );
+      } finally {
+        setIsProcessingVoicePrompt(false);
       }
     })();
   };
@@ -1269,8 +1434,12 @@ export default function LiveDashboardScreen() {
           pack={reteachPack}
           isAvailable={aiAvailable}
           isLoading={isGeneratingPack}
+          voiceAvailable={voiceTtsReady}
+          isSpeaking={isPlayingAudio}
           onGenerate={() => handleExplanationPress(focusCluster)}
           onCopy={handleCopyReteachCard}
+          onSpeak={handleSpeakReteachCard}
+          onStopSpeaking={stop}
         />
 
         <QuickPollPanel
@@ -1284,12 +1453,17 @@ export default function LiveDashboardScreen() {
           editingSource={pollComposer.source}
           isClosing={isClosingPoll}
           isGeneratingAI={isGeneratingAIPoll}
+          isProcessingVoicePrompt={isProcessingVoicePrompt}
           isPushing={isPushingPoll}
+          isRecordingVoicePrompt={isRecordingVoicePrompt}
           isSavingDraft={isSavingDraft}
           pollDistribution={pollDistribution}
           pollHistory={pollHistory}
           selectedPoll={selectedPoll}
           selectedPollId={selectedPoll?.id}
+          voiceError={voicePromptError}
+          voiceToPollEnabled={voiceToPollEnabled}
+          voiceTranscript={pollComposer.voiceTranscript}
           onAddOption={handleAddOption}
           onChangeOption={handleOptionChange}
           onChangeQuestion={handleQuestionChange}
@@ -1301,6 +1475,8 @@ export default function LiveDashboardScreen() {
           onResetComposer={resetPollComposer}
           onSaveDraft={handleSaveDraft}
           onSelectPoll={selectPoll}
+          onStartVoicePrompt={handleStartVoicePrompt}
+          onStopVoicePrompt={handleStopVoicePrompt}
         />
       </ScrollView>
 

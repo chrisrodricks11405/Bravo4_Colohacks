@@ -12,8 +12,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StateScreen } from "../../src/components/app/StateScreen";
 import { Badge, Button, Card } from "../../src/components/ui";
 import { useAuth } from "../../src/providers";
-import { saveTeacherPreferences } from "../../src/services";
-import { usePreferencesStore } from "../../src/stores";
+import {
+  saveTeacherPreferences,
+  voiceProvider,
+  VOICE_LOCALE_OPTIONS,
+  VOICE_TTS_OPTIONS,
+} from "../../src/services";
+import { useNetworkStore, usePreferencesStore } from "../../src/stores";
+import { useShallow } from "zustand/react/shallow";
 import { DEFAULT_PREFERENCES, type TeacherPreferences } from "../../src/types";
 import { borderRadius, colors, spacing, textStyles } from "../../src/theme";
 
@@ -25,6 +31,8 @@ interface SettingsDraft {
   defaultLanguage: string;
   defaultLostThreshold: string;
   voiceEnabled: boolean;
+  ttsVoice: string;
+  ttsLocale: string;
   aiProviderEnabled: boolean;
 }
 
@@ -37,6 +45,8 @@ function toDraft(preferences: Partial<TeacherPreferences>): SettingsDraft {
       preferences.defaultLostThreshold ?? DEFAULT_PREFERENCES.defaultLostThreshold
     ),
     voiceEnabled: preferences.voiceEnabled ?? DEFAULT_PREFERENCES.voiceEnabled,
+    ttsVoice: preferences.ttsVoice ?? DEFAULT_PREFERENCES.ttsVoice ?? "marin",
+    ttsLocale: preferences.ttsLocale ?? DEFAULT_PREFERENCES.ttsLocale ?? "en-US",
     aiProviderEnabled:
       preferences.aiProviderEnabled ?? DEFAULT_PREFERENCES.aiProviderEnabled,
   };
@@ -58,8 +68,14 @@ function normalizeDraft(
     defaultLanguage: draft.defaultLanguage.trim() || DEFAULT_PREFERENCES.defaultLanguage,
     defaultLostThreshold: lostThreshold,
     voiceEnabled: draft.voiceEnabled,
+    ttsVoice: draft.ttsVoice.trim() || DEFAULT_PREFERENCES.ttsVoice,
+    ttsLocale: draft.ttsLocale.trim() || DEFAULT_PREFERENCES.ttsLocale,
     aiProviderEnabled: draft.aiProviderEnabled,
   };
+}
+
+function formatVoiceLabel(voice: string) {
+  return voice.charAt(0).toUpperCase() + voice.slice(1);
 }
 
 function TextField({
@@ -92,22 +108,24 @@ function TextField({
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
-  const preferences = usePreferencesStore((state) => ({
+  const voiceServiceReachable = useNetworkStore((state) => state.voiceServiceReachable);
+  const preferences = usePreferencesStore(useShallow((state) => ({
     defaultSubject: state.defaultSubject,
     defaultGradeClass: state.defaultGradeClass,
     defaultLanguage: state.defaultLanguage,
     defaultLostThreshold: state.defaultLostThreshold,
     voiceEnabled: state.voiceEnabled,
-    aiProviderEnabled: state.aiProviderEnabled,
-    theme: state.theme,
     ttsVoice: state.ttsVoice,
     ttsLocale: state.ttsLocale,
+    aiProviderEnabled: state.aiProviderEnabled,
+    theme: state.theme,
     isLoaded: state.isLoaded,
     loadPreferences: state.loadPreferences,
-  }));
+  })));
   const [draft, setDraft] = useState<SettingsDraft>(toDraft(preferences));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const voiceCapabilities = voiceProvider.getCapabilities();
 
   useEffect(() => {
     if (!preferences.isLoaded) {
@@ -121,6 +139,8 @@ export default function SettingsScreen() {
         defaultLanguage: preferences.defaultLanguage,
         defaultLostThreshold: preferences.defaultLostThreshold,
         voiceEnabled: preferences.voiceEnabled,
+        ttsVoice: preferences.ttsVoice,
+        ttsLocale: preferences.ttsLocale,
         aiProviderEnabled: preferences.aiProviderEnabled,
       })
     );
@@ -131,6 +151,8 @@ export default function SettingsScreen() {
     preferences.defaultLostThreshold,
     preferences.defaultSubject,
     preferences.isLoaded,
+    preferences.ttsLocale,
+    preferences.ttsVoice,
     preferences.voiceEnabled,
   ]);
 
@@ -151,6 +173,8 @@ export default function SettingsScreen() {
       defaultLanguage: preferences.defaultLanguage,
       defaultLostThreshold: preferences.defaultLostThreshold,
       voiceEnabled: preferences.voiceEnabled,
+      ttsVoice: preferences.ttsVoice,
+      ttsLocale: preferences.ttsLocale,
       aiProviderEnabled: preferences.aiProviderEnabled,
     }),
     {
@@ -194,8 +218,6 @@ export default function SettingsScreen() {
     const resetPreferences: TeacherPreferences = {
       ...DEFAULT_PREFERENCES,
       theme: preferences.theme,
-      ttsVoice: preferences.ttsVoice,
-      ttsLocale: preferences.ttsLocale,
     };
 
     setSaveState("saving");
@@ -230,6 +252,15 @@ export default function SettingsScreen() {
       );
     }
   };
+
+  const voiceStatus =
+    !draft.voiceEnabled
+      ? { label: "Voice off", variant: "neutral" as const }
+      : voiceCapabilities.available && voiceServiceReachable
+        ? { label: "Provider ready", variant: "success" as const }
+        : voiceCapabilities.available
+          ? { label: "Provider offline", variant: "warning" as const }
+          : { label: "Provider unavailable", variant: "neutral" as const };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -377,7 +408,7 @@ export default function SettingsScreen() {
         <Card variant="default" padding="lg" style={styles.card}>
           <Text style={styles.cardTitle}>AI & Voice</Text>
           <Text style={styles.cardSubtitle}>
-            Toggle service badges and feature readiness across the teacher app.
+            Control AI assistance, speech settings, and graceful fallbacks across the teacher app.
           </Text>
 
           <View style={styles.toggleRow}>
@@ -403,7 +434,7 @@ export default function SettingsScreen() {
             <View style={styles.toggleCopy}>
               <Text style={styles.toggleTitle}>Voice Features</Text>
               <Text style={styles.toggleDescription}>
-                Keep the voice service badge available for future read-aloud and capture flows.
+                Enable voice-to-poll, spoken explanations, and post-session reflections when the provider is available.
               </Text>
             </View>
             <Switch
@@ -415,6 +446,100 @@ export default function SettingsScreen() {
               thumbColor={
                 draft.voiceEnabled ? colors.primary[600] : colors.surface.card
               }
+            />
+          </View>
+
+          <View style={styles.voiceStatusCard}>
+            <View style={styles.voiceStatusHeader}>
+              <View>
+                <Text style={styles.toggleTitle}>Voice provider status</Text>
+                <Text style={styles.toggleDescription}>
+                  Voice controls automatically hide when transcription or TTS is unavailable.
+                </Text>
+              </View>
+              <Badge label={voiceStatus.label} variant={voiceStatus.variant} size="sm" />
+            </View>
+            {!voiceCapabilities.available ? (
+              <Text style={styles.voiceStatusText}>
+                {voiceCapabilities.reason ??
+                  "Connect a configured voice provider to enable recording and spoken playback."}
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>TTS Voice</Text>
+            <View style={styles.languageRow}>
+              {VOICE_TTS_OPTIONS.map((voice) => {
+                const selected = draft.ttsVoice === voice;
+
+                return (
+                  <TouchableOpacity
+                    key={voice}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      setDraft((current) => ({ ...current, ttsVoice: voice }))
+                    }
+                    style={[
+                      styles.languageChip,
+                      selected && styles.languageChipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.languageChipText,
+                        selected && styles.languageChipTextActive,
+                      ]}
+                    >
+                      {formatVoiceLabel(voice)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Speech Language</Text>
+            <View style={styles.languageRow}>
+              {VOICE_LOCALE_OPTIONS.map((localeOption) => {
+                const selected = draft.ttsLocale === localeOption.value;
+
+                return (
+                  <TouchableOpacity
+                    key={localeOption.value}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        ttsLocale: localeOption.value,
+                      }))
+                    }
+                    style={[
+                      styles.languageChip,
+                      selected && styles.languageChipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.languageChipText,
+                        selected && styles.languageChipTextActive,
+                      ]}
+                    >
+                      {localeOption.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TextInput
+              value={draft.ttsLocale}
+              onChangeText={(value) =>
+                setDraft((current) => ({ ...current, ttsLocale: value }))
+              }
+              placeholder="Or type a custom locale like en-GB"
+              placeholderTextColor={colors.text.tertiary}
+              style={styles.input}
             />
           </View>
         </Card>
@@ -562,6 +687,25 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.surface.borderLight,
+  },
+  voiceStatusCard: {
+    marginTop: spacing.base,
+    padding: spacing.base,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.surface.border,
+    backgroundColor: colors.surface.cardHover,
+    gap: spacing.sm,
+  },
+  voiceStatusHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.base,
+    alignItems: "flex-start",
+  },
+  voiceStatusText: {
+    ...textStyles.bodySmall,
+    color: colors.text.secondary,
   },
   toggleCopy: {
     flex: 1,

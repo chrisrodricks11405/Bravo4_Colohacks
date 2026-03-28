@@ -38,6 +38,13 @@ interface AIQuickPollSuggestion {
   rationale: string;
 }
 
+interface TeacherVoicePollContext {
+  subject: string;
+  topic: string;
+  language: string;
+  gradeClass?: string;
+}
+
 interface SessionSummaryAIInput {
   subject: string;
   topic: string;
@@ -62,6 +69,26 @@ interface SessionSummaryAIInput {
 interface AISessionSummary {
   narrative: string;
   suggestedOpeningActivity: string;
+  source: "edge" | "fallback";
+}
+
+interface VoiceReflectionContext {
+  subject: string;
+  topic: string;
+  gradeClass: string;
+  suggestedNextActivity?: string;
+}
+
+interface VoiceReflectionAction {
+  id: string;
+  title: string;
+  detail: string;
+  timing: "opening" | "check_in" | "follow_up";
+}
+
+interface VoiceReflectionPlan {
+  summary: string;
+  actions: VoiceReflectionAction[];
   source: "edge" | "fallback";
 }
 
@@ -119,6 +146,10 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const openAIKey = Deno.env.get("OPENAI_API_KEY");
+const transcriptionModel = Deno.env.get("OPENAI_TRANSCRIBE_MODEL") ?? "gpt-4o-transcribe";
+const speechModel = Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts";
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -189,6 +220,285 @@ function buildQuickPoll(ctx: ClusterContext): AIQuickPollSuggestion {
     correctIndex: 0,
     rationale:
       "This poll separates confident understanding from step-level confusion so the teacher can choose between moving on, reworking an example, or slowing the pace.",
+  };
+}
+
+function normalizePrompt(prompt: string) {
+  return prompt.replace(/\s+/g, " ").trim();
+}
+
+function buildTeacherVoicePoll(
+  prompt: string,
+  context: TeacherVoicePollContext
+): AIQuickPollSuggestion {
+  const normalizedPrompt = normalizePrompt(prompt);
+  const topicHandle = context.topic.trim() || context.subject.trim() || "today's idea";
+  const question =
+    normalizedPrompt.length === 0
+      ? `Quick check on ${topicHandle}: which option best matches your understanding right now?`
+      : /[?!.]$/.test(normalizedPrompt)
+        ? normalizedPrompt
+        : `${normalizedPrompt}?`;
+
+  return {
+    question,
+    options: [
+      "I can answer it and explain why.",
+      "I can narrow it down but need one hint.",
+      `I remember part of ${topicHandle} but not the full method.`,
+      "I need a short reteach before I can answer.",
+    ],
+    correctIndex: 0,
+    rationale:
+      "This voice-to-poll draft separates confident understanding from partial recall and reteach need so the teacher can review, edit, and push quickly.",
+  };
+}
+
+function splitTranscriptSentences(transcript: string) {
+  return transcript
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function buildVoiceReflectionPlan(
+  transcript: string,
+  context: VoiceReflectionContext
+): VoiceReflectionPlan {
+  const normalizedTranscript = normalizePrompt(transcript);
+
+  if (!normalizedTranscript) {
+    return {
+      summary: "",
+      actions: [],
+      source: "edge",
+    };
+  }
+
+  const topicHandle = context.topic.trim() || "the topic";
+  const defaultOpening =
+    context.suggestedNextActivity?.trim() ||
+    `Open the next ${context.subject} lesson with a two-minute recap of ${topicHandle}.`;
+
+  const actionCandidates = [
+    {
+      test: /(slow|pace|rushed|too fast|speed)/i,
+      title: "Slow the opener",
+      detail: `Reopen ${topicHandle} with a slower first example and a short pause before students answer.`,
+      timing: "opening" as const,
+    },
+    {
+      test: /(example|worked example|model|show)/i,
+      title: "Lead with one more example",
+      detail: `Start with one fresh worked example on ${topicHandle} before moving into independent practice.`,
+      timing: "opening" as const,
+    },
+    {
+      test: /(language|wording|term|vocab|translation|hindi|marathi|kannada|english)/i,
+      title: "Pre-teach vocabulary",
+      detail: "Restate the key terms in simpler classroom language and ask one student to paraphrase the idea.",
+      timing: "opening" as const,
+    },
+    {
+      test: /(check|poll|thumb|confidence|understanding)/i,
+      title: "Add a fast check-in",
+      detail: "Run a 30-second confidence check after the first explanation so confusion surfaces earlier.",
+      timing: "check_in" as const,
+    },
+    {
+      test: /(notation|symbol|sign)/i,
+      title: "Review notation explicitly",
+      detail: "Contrast the correct notation with the most likely mistake before practice begins.",
+      timing: "opening" as const,
+    },
+    {
+      test: /(prerequisite|foundation|basics|prior knowledge)/i,
+      title: "Rebuild the prerequisite",
+      detail: `Spend the first minute reconnecting the prerequisite idea behind ${topicHandle}.`,
+      timing: "opening" as const,
+    },
+  ];
+
+  const actions = actionCandidates
+    .filter((candidate) => candidate.test.test(normalizedTranscript))
+    .slice(0, 3)
+    .map((candidate, index) => ({
+      id: `reflection_action_${index + 1}`,
+      title: candidate.title,
+      detail: candidate.detail,
+      timing: candidate.timing,
+    }));
+
+  if (actions.length === 0) {
+    actions.push(
+      {
+        id: "reflection_action_1",
+        title: "Reopen with a clear recap",
+        detail: defaultOpening,
+        timing: "opening",
+      },
+      {
+        id: "reflection_action_2",
+        title: "Check understanding earlier",
+        detail: "Add a fast poll or verbal check after the first worked step instead of waiting until practice.",
+        timing: "check_in",
+      },
+      {
+        id: "reflection_action_3",
+        title: "Capture one follow-up note",
+        detail: `Watch whether the same confusion returns during the next ${context.gradeClass} lesson and log it if it does.`,
+        timing: "follow_up",
+      }
+    );
+  }
+
+  const summary =
+    splitTranscriptSentences(normalizedTranscript).slice(0, 2).join(" ") ||
+    `Focus the next class on a cleaner opening and earlier check for ${topicHandle}.`;
+
+  return {
+    summary,
+    actions,
+    source: "edge",
+  };
+}
+
+function getAudioFileExtension(mimeType?: string) {
+  switch (mimeType) {
+    case "audio/mp4":
+    case "audio/m4a":
+      return "m4a";
+    case "audio/mp3":
+    case "audio/mpeg":
+      return "mp3";
+    case "audio/wav":
+      return "wav";
+    case "audio/webm":
+      return "webm";
+    default:
+      return "m4a";
+  }
+}
+
+function decodeBase64(base64: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function encodeBase64(bytes: Uint8Array) {
+  let binary = "";
+
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(index, index + 0x8000));
+  }
+
+  return btoa(binary);
+}
+
+async function parseOpenAIError(response: Response) {
+  const fallback = `${response.status} ${response.statusText}`.trim();
+
+  try {
+    const data = await response.json();
+    const message =
+      data &&
+      typeof data === "object" &&
+      "error" in data &&
+      data.error &&
+      typeof data.error === "object" &&
+      "message" in data.error &&
+      typeof data.error.message === "string"
+        ? data.error.message
+        : null;
+
+    return message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function transcribeTeacherVoicePrompt(args: {
+  audioBase64: string;
+  mimeType?: string;
+  locale?: string;
+  hint?: string;
+}) {
+  if (!openAIKey) {
+    throw new Error("Voice transcription is unavailable because OPENAI_API_KEY is missing.");
+  }
+
+  const audioBytes = decodeBase64(args.audioBase64);
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([audioBytes], { type: args.mimeType || "audio/m4a" }),
+    `teacher-voice.${getAudioFileExtension(args.mimeType)}`
+  );
+  formData.append("model", transcriptionModel);
+  formData.append("response_format", "text");
+
+  if (args.hint?.trim()) {
+    formData.append("prompt", args.hint.trim());
+  } else if (args.locale?.trim()) {
+    formData.append(
+      "prompt",
+      `Transcribe this short classroom note clearly for a teacher using ${args.locale.trim()}.`
+    );
+  }
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAIKey}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseOpenAIError(response));
+  }
+
+  return (await response.text()).trim();
+}
+
+async function generateSpokenExplanation(args: {
+  text: string;
+  locale?: string;
+  voice?: string;
+}) {
+  if (!openAIKey) {
+    throw new Error("Speech generation is unavailable because OPENAI_API_KEY is missing.");
+  }
+
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAIKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: speechModel,
+      voice: args.voice || "marin",
+      input: args.text,
+      response_format: "wav",
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseOpenAIError(response));
+  }
+
+  const audioBytes = new Uint8Array(await response.arrayBuffer());
+
+  return {
+    audioBase64: encodeBase64(audioBytes),
+    mimeType: "audio/wav",
   };
 }
 
@@ -362,17 +672,35 @@ serve(async (request) => {
       action?:
         | "generateReteachPack"
         | "generateQuickPoll"
+        | "generateTeacherVoicePoll"
         | "generateSessionSummary"
-        | "generateWeeklyInsight";
+        | "generateWeeklyInsight"
+        | "structureVoiceReflection"
+        | "transcribeTeacherVoicePrompt"
+        | "generateSpokenExplanation";
       clusterContext?: ClusterContext;
+      prompt?: string;
+      promptContext?: TeacherVoicePollContext;
       summaryInput?: SessionSummaryAIInput;
       weeklyInsight?: WeeklyInsightAggregate;
+      transcript?: string;
+      reflectionContext?: VoiceReflectionContext;
+      audioBase64?: string;
+      mimeType?: string;
+      locale?: string;
+      hint?: string;
+      text?: string;
+      voice?: string;
     };
 
     const action = body.action;
     const clusterContext = body.clusterContext;
+    const prompt = body.prompt;
+    const promptContext = body.promptContext;
     const summaryInput = body.summaryInput;
     const weeklyInsight = body.weeklyInsight;
+    const transcript = body.transcript;
+    const reflectionContext = body.reflectionContext;
 
     if (!action) {
       return jsonResponse({ error: "Action is required." }, { status: 400 });
@@ -400,6 +728,17 @@ serve(async (request) => {
       return jsonResponse({ result: buildQuickPoll(clusterContext) });
     }
 
+    if (action === "generateTeacherVoicePoll") {
+      if (!prompt || !promptContext) {
+        return jsonResponse(
+          { error: "prompt and promptContext are required for generateTeacherVoicePoll." },
+          { status: 400 }
+        );
+      }
+
+      return jsonResponse({ result: buildTeacherVoicePoll(prompt, promptContext) });
+    }
+
     if (action === "generateSessionSummary") {
       if (!summaryInput) {
         return jsonResponse(
@@ -420,6 +759,54 @@ serve(async (request) => {
       }
 
       return jsonResponse({ result: buildWeeklyInsight(weeklyInsight) });
+    }
+
+    if (action === "structureVoiceReflection") {
+      if (!transcript || !reflectionContext) {
+        return jsonResponse(
+          { error: "transcript and reflectionContext are required for structureVoiceReflection." },
+          { status: 400 }
+        );
+      }
+
+      return jsonResponse({
+        result: buildVoiceReflectionPlan(transcript, reflectionContext),
+      });
+    }
+
+    if (action === "transcribeTeacherVoicePrompt") {
+      if (!body.audioBase64) {
+        return jsonResponse(
+          { error: "audioBase64 is required for transcribeTeacherVoicePrompt." },
+          { status: 400 }
+        );
+      }
+
+      const text = await transcribeTeacherVoicePrompt({
+        audioBase64: body.audioBase64,
+        mimeType: body.mimeType,
+        locale: body.locale,
+        hint: body.hint,
+      });
+
+      return jsonResponse({ text });
+    }
+
+    if (action === "generateSpokenExplanation") {
+      if (!body.text) {
+        return jsonResponse(
+          { error: "text is required for generateSpokenExplanation." },
+          { status: 400 }
+        );
+      }
+
+      return jsonResponse(
+        await generateSpokenExplanation({
+          text: body.text,
+          locale: body.locale,
+          voice: body.voice,
+        })
+      );
     }
 
     return jsonResponse({ error: "Unsupported AI action." }, { status: 400 });

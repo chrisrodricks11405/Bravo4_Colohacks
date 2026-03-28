@@ -14,7 +14,9 @@ import { Badge, Button, Card, StatusChip } from "../../src/components/ui";
 import { useRecentSessions } from "../../src/hooks/useRecentSessions";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useAuth } from "../../src/providers";
+import { voiceProvider } from "../../src/services";
 import { useNetworkStore, usePreferencesStore } from "../../src/stores";
+import { useShallow } from "zustand/react/shallow";
 import type { RecentSession } from "../../src/types";
 import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
 
@@ -102,17 +104,19 @@ function RecentSessionRow({ session }: { session: RecentSession }) {
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const preferences = usePreferencesStore((state) => ({
+  const voiceCapabilities = voiceProvider.getCapabilities();
+  const preferences = usePreferencesStore(useShallow((state) => ({
     defaultLanguage: state.defaultLanguage,
     defaultLostThreshold: state.defaultLostThreshold,
     defaultSubject: state.defaultSubject,
     defaultGradeClass: state.defaultGradeClass,
     aiProviderEnabled: state.aiProviderEnabled,
     voiceEnabled: state.voiceEnabled,
-  }));
+  })));
   const {
     isConnected,
     supabaseReachable,
+    voiceServiceReachable,
     pendingSyncCount,
     failedSyncCount,
     lastSyncAt,
@@ -143,7 +147,11 @@ export default function HomeScreen() {
         : { label: "AI off", variant: "neutral" as const };
 
   const voiceBadge = preferences.voiceEnabled
-    ? { label: "Voice ready", variant: "success" as const }
+    ? voiceCapabilities.available && voiceServiceReachable
+      ? { label: "Voice ready", variant: "success" as const }
+      : voiceCapabilities.available
+        ? { label: "Voice offline", variant: "warning" as const }
+        : { label: "Voice unavailable", variant: "neutral" as const }
     : { label: "Voice off", variant: "neutral" as const };
 
   return (

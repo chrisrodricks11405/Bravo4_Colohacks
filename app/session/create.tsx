@@ -20,6 +20,7 @@ import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useAuth, useSessionHydration } from "../../src/providers";
 import { createSession } from "../../src/services";
 import { useNetworkStore, usePreferencesStore, useSessionStore } from "../../src/stores";
+import { useShallow } from "zustand/react/shallow";
 import { borderRadius, colors, spacing, textStyles } from "../../src/theme";
 
 const sessionSchema = z.object({
@@ -90,12 +91,12 @@ export default function CreateSessionScreen() {
   const setNetworkMode = useNetworkStore((state) => state.setMode);
   const isConnected = useNetworkStore((state) => state.isConnected);
   const supabaseReachable = useNetworkStore((state) => state.supabaseReachable);
-  const preferences = usePreferencesStore((state) => ({
+  const preferences = usePreferencesStore(useShallow((state) => ({
     defaultSubject: state.defaultSubject,
     defaultGradeClass: state.defaultGradeClass,
     defaultLanguage: state.defaultLanguage,
     defaultLostThreshold: state.defaultLostThreshold,
-  }));
+  })));
 
   const initialMode = mode === "offline" ? "offline" : "online";
   const [submitError, setSubmitError] = useState<string | null>(null);

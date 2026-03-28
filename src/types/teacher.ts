@@ -15,6 +15,8 @@ export const DEFAULT_PREFERENCES: TeacherPreferences = {
   defaultLanguage: "en",
   defaultLostThreshold: 40,
   voiceEnabled: false,
+  ttsVoice: "marin",
+  ttsLocale: "en-US",
   aiProviderEnabled: true,
   theme: "light",
 };

@@ -22,10 +22,14 @@ import {
   getPersistedSession,
   getSessionSummary,
   syncSessionSummariesFromSupabase,
+  aiProvider,
   updateSessionSummaryVoiceReflection,
   voiceProvider,
 } from "../../src/services";
+import { startAudioRecording, stopAudioRecording } from "../../src/services/audioSession";
+import { useAudioPlayback } from "../../src/hooks/useAudioPlayback";
 import { useNetworkStore, usePreferencesStore } from "../../src/stores";
+import { useShallow } from "zustand/react/shallow";
 import type { InterventionEffectiveness, SessionMeta, SessionSummaryPayload } from "../../src/types";
 import {
   borderRadius,
@@ -161,6 +165,15 @@ function InsightRow({
   );
 }
 
+function buildReflectionContext(summary: SessionSummaryPayload) {
+  return {
+    subject: summary.subject,
+    topic: summary.topic,
+    gradeClass: summary.gradeClass,
+    suggestedNextActivity: summary.suggestedNextActivity,
+  };
+}
+
 export default function SessionSummaryScreen() {
   const router = useRouter();
   const { sessionId: sessionIdParam } = useLocalSearchParams<{ sessionId?: string }>();
@@ -168,11 +181,15 @@ export default function SessionSummaryScreen() {
   const { user } = useAuth();
   const isConnected = useNetworkStore((state) => state.isConnected);
   const supabaseReachable = useNetworkStore((state) => state.supabaseReachable);
-  const preferences = usePreferencesStore((state) => ({
+  const voiceServiceReachable = useNetworkStore((state) => state.voiceServiceReachable);
+  const preferences = usePreferencesStore(useShallow((state) => ({
     aiProviderEnabled: state.aiProviderEnabled,
+    defaultLanguage: state.defaultLanguage,
+    ttsLocale: state.ttsLocale,
+    ttsVoice: state.ttsVoice,
     voiceEnabled: state.voiceEnabled,
     defaultLostThreshold: state.defaultLostThreshold,
-  }));
+  })));
 
   const [summary, setSummary] = useState<SessionSummaryPayload | null>(null);
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
@@ -185,10 +202,18 @@ export default function SessionSummaryScreen() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [voiceUri, setVoiceUri] = useState<string | null>(null);
   const [transcriptDraft, setTranscriptDraft] = useState("");
+  const { activeUri, isPlaying, playbackError, play, stop } = useAudioPlayback();
 
   const sessionId = getParam(sessionIdParam);
   const isWide = width >= 980;
   const recoveryTone = getRecoveryTone(summary?.overallRecoveryScore ?? 0);
+  const voiceCapabilities = voiceProvider.getCapabilities();
+  const voiceCaptureReady =
+    preferences.voiceEnabled &&
+    voiceCapabilities.transcriptionAvailable &&
+    voiceServiceReachable;
+  const resolvedVoiceLocale =
+    preferences.ttsLocale || sessionMeta?.language || preferences.defaultLanguage || "en-US";
 
   useEffect(() => {
     if (!sessionId) {
@@ -283,6 +308,12 @@ export default function SessionSummaryScreen() {
     };
   }, [recording]);
 
+  useEffect(() => {
+    if (playbackError) {
+      Alert.alert("Audio playback issue", playbackError);
+    }
+  }, [playbackError]);
+
   const attentionThreshold =
     sessionMeta?.lostThreshold ?? preferences.defaultLostThreshold;
 
@@ -303,24 +334,8 @@ export default function SessionSummaryScreen() {
   const handleStartRecording = async () => {
     try {
       setVoiceError(null);
-      const permission = await Audio.requestPermissionsAsync();
-
-      if (!permission.granted) {
-        throw new Error("Microphone access is needed to capture a reflection note.");
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-
-      const created = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-
-      setRecording(created.recording);
+      const createdRecording = await startAudioRecording();
+      setRecording(createdRecording);
       setIsRecording(true);
     } catch (recordError) {
       setVoiceError(
@@ -344,36 +359,42 @@ export default function SessionSummaryScreen() {
     setRecording(null);
 
     try {
-      await activeRecording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-
-      const nextVoiceUri = activeRecording.getURI();
-      if (!nextVoiceUri) {
-        throw new Error("The recording finished, but no audio file was returned.");
-      }
-
+      const nextVoiceUri = await stopAudioRecording(activeRecording);
       setVoiceUri(nextVoiceUri);
 
-      let transcript: string;
-
+      let transcript = "";
       try {
-        transcript = await voiceProvider.transcribe(nextVoiceUri);
-      } catch {
-        transcript =
-          "Voice reflection captured. Automatic transcription is unavailable right now, so you can edit this note manually before saving.";
+        transcript = await voiceProvider.transcribeTeacherVoicePrompt(nextVoiceUri, {
+          locale: resolvedVoiceLocale,
+          hint: `Short post-class reflection for ${summary.subject} about ${summary.topic}.`,
+        });
+      } catch (transcriptionError) {
+        setVoiceError(
+          transcriptionError instanceof Error
+            ? transcriptionError.message
+            : "Automatic transcription is unavailable right now, so you can add a typed note instead."
+        );
       }
 
       setTranscriptDraft(transcript);
+      const reflectionPlan = transcript.trim()
+        ? await aiProvider.structureVoiceReflection(
+            transcript,
+            buildReflectionContext(summary)
+          )
+        : {
+            summary: "",
+            actions: [],
+            source: "fallback" as const,
+          };
 
       const savedSummary = await updateSessionSummaryVoiceReflection({
         sessionId: summary.sessionId,
         voiceReflectionUri: nextVoiceUri,
         voiceReflectionTranscript: transcript,
+        voiceReflectionSummary: reflectionPlan.summary,
+        voiceReflectionActions: reflectionPlan.actions,
+        voiceReflectionActionSource: reflectionPlan.source,
         attemptRemoteSync: supabaseReachable,
         queueOnFailure: true,
       });
@@ -399,10 +420,24 @@ export default function SessionSummaryScreen() {
     setVoiceError(null);
 
     try {
+      const normalizedTranscript = transcriptDraft.trim();
+      const reflectionPlan = normalizedTranscript
+        ? await aiProvider.structureVoiceReflection(
+            normalizedTranscript,
+            buildReflectionContext(summary)
+          )
+        : {
+            summary: "",
+            actions: [],
+            source: "fallback" as const,
+          };
       const savedSummary = await updateSessionSummaryVoiceReflection({
         sessionId: summary.sessionId,
         voiceReflectionUri: voiceUri ?? undefined,
-        voiceReflectionTranscript: transcriptDraft.trim() || undefined,
+        voiceReflectionTranscript: normalizedTranscript,
+        voiceReflectionSummary: reflectionPlan.summary,
+        voiceReflectionActions: reflectionPlan.actions,
+        voiceReflectionActionSource: reflectionPlan.source,
         attemptRemoteSync: supabaseReachable,
         queueOnFailure: true,
       });
@@ -583,7 +618,7 @@ export default function SessionSummaryScreen() {
                 <View>
                   <Text style={styles.sectionTitle}>Voice Reflection</Text>
                   <Text style={styles.sectionSubtitle}>
-                    Record an optional post-class note, review the transcript, and store it with the summary.
+                    Record an optional post-class note, review the transcript, and turn it into next-class actions.
                   </Text>
                 </View>
                 <Badge
@@ -605,6 +640,13 @@ export default function SessionSummaryScreen() {
                     onPress={() => router.push("/(tabs)/settings")}
                   />
                 </View>
+              ) : !voiceCaptureReady ? (
+                <View style={styles.voiceDisabledCard}>
+                  <Text style={styles.voiceDisabledTitle}>Voice provider unavailable</Text>
+                  <Text style={styles.voiceDisabledText}>
+                    Recording controls stay hidden until transcription is reachable. Typed reflections still save and can generate next-class actions.
+                  </Text>
+                </View>
               ) : (
                 <View style={styles.voiceActions}>
                   <Button
@@ -619,8 +661,31 @@ export default function SessionSummaryScreen() {
                     disabled={!isRecording || isTranscribing}
                     variant="outline"
                   />
+                  {voiceUri ? (
+                    <Button
+                      title={isPlaying && activeUri === voiceUri ? "Stop playback" : "Play recording"}
+                      onPress={() =>
+                        isPlaying && activeUri === voiceUri
+                          ? stop()
+                          : play(voiceUri)
+                      }
+                      variant="ghost"
+                    />
+                  ) : null}
                 </View>
               )}
+
+              {!voiceCaptureReady && voiceUri ? (
+                <View style={styles.voiceActions}>
+                  <Button
+                    title={isPlaying && activeUri === voiceUri ? "Stop playback" : "Play recording"}
+                    onPress={() =>
+                      isPlaying && activeUri === voiceUri ? stop() : play(voiceUri)
+                    }
+                    variant="ghost"
+                  />
+                </View>
+              ) : null}
 
               {isTranscribing ? (
                 <View style={styles.transcribingRow}>
@@ -642,6 +707,65 @@ export default function SessionSummaryScreen() {
                 style={styles.reflectionInput}
                 textAlignVertical="top"
               />
+
+              <View style={styles.reflectionPlanCard}>
+                <View style={styles.reflectionPlanHeader}>
+                  <View>
+                    <Text style={styles.reflectionPlanTitle}>Next-class actions</Text>
+                    <Text style={styles.reflectionPlanSubtitle}>
+                      Saved reflection notes are structured into a short action list for the next lesson.
+                    </Text>
+                  </View>
+                  {summary.voiceReflectionActionSource ? (
+                    <Badge
+                      label={
+                        summary.voiceReflectionActionSource === "edge"
+                          ? "Structured by AI"
+                          : "Fallback plan"
+                      }
+                      variant={
+                        summary.voiceReflectionActionSource === "edge"
+                          ? "primary"
+                          : "warning"
+                      }
+                      size="sm"
+                    />
+                  ) : null}
+                </View>
+
+                {summary.voiceReflectionSummary ? (
+                  <Text style={styles.reflectionPlanSummary}>
+                    {summary.voiceReflectionSummary}
+                  </Text>
+                ) : null}
+
+                {summary.voiceReflectionActions.length === 0 ? (
+                  <Text style={styles.voiceHint}>
+                    Save a reflection note to generate an action plan for the next class.
+                  </Text>
+                ) : (
+                  <View style={styles.reflectionActionList}>
+                    {summary.voiceReflectionActions.map((action, index) => (
+                      <View key={action.id} style={styles.reflectionActionItem}>
+                        <View style={styles.indexBubble}>
+                          <Text style={styles.indexBubbleText}>{index + 1}</Text>
+                        </View>
+                        <View style={styles.reflectionActionCopy}>
+                          <Text style={styles.reflectionActionTitle}>{action.title}</Text>
+                          <Text style={styles.reflectionActionDetail}>{action.detail}</Text>
+                          <Text style={styles.reflectionActionMeta}>
+                            {action.timing === "opening"
+                              ? "Use at the opening"
+                              : action.timing === "check_in"
+                                ? "Use during the first check-in"
+                                : "Use as a follow-up note"}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
 
               <View style={styles.voiceFooter}>
                 <Text style={styles.voiceHint}>
@@ -1010,6 +1134,62 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     ...textStyles.bodyMedium,
     color: colors.text.primary,
+  },
+  reflectionPlanCard: {
+    marginTop: spacing.base,
+    padding: spacing.base,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.surface.border,
+    backgroundColor: colors.surface.cardHover,
+    gap: spacing.base,
+  },
+  reflectionPlanHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.base,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  reflectionPlanTitle: {
+    ...textStyles.headingSmall,
+    color: colors.text.primary,
+  },
+  reflectionPlanSubtitle: {
+    ...textStyles.bodySmall,
+    color: colors.text.secondary,
+    marginTop: spacing.xxs,
+  },
+  reflectionPlanSummary: {
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+  },
+  reflectionActionList: {
+    gap: spacing.base,
+  },
+  reflectionActionItem: {
+    flexDirection: "row",
+    gap: spacing.base,
+    alignItems: "flex-start",
+  },
+  reflectionActionCopy: {
+    flex: 1,
+  },
+  reflectionActionTitle: {
+    ...textStyles.headingSmall,
+    color: colors.text.primary,
+  },
+  reflectionActionDetail: {
+    ...textStyles.bodySmall,
+    color: colors.text.secondary,
+    marginTop: spacing.xxs,
+  },
+  reflectionActionMeta: {
+    ...textStyles.caption,
+    color: colors.text.tertiary,
+    marginTop: spacing.xxs,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   voiceFooter: {
     marginTop: spacing.base,

@@ -14,66 +14,50 @@ import { Badge, Button, Card } from "../../src/components/ui";
 import { useAuth } from "../../src/providers";
 import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
 
-export default function LoginScreen() {
+export default function SignUpScreen() {
   const router = useRouter();
-  const { signInWithPassword, sendMagicLink, isConfigured } = useAuth();
+  const { signUp, isConfigured } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSigningIn, setIsSigningIn] = useState(false);
-  const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSigningUp, setIsSigningUp] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [magicLinkMessage, setMagicLinkMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const handlePasswordSignIn = async () => {
+  const handleSignUp = async () => {
     if (!isConfigured) {
-      setErrorMessage("Add valid Supabase environment variables before signing in.");
+      setErrorMessage("Add valid Supabase environment variables before signing up.");
       return;
     }
 
-    setIsSigningIn(true);
+    if (password !== confirmPassword) {
+      setErrorMessage("Passwords do not match.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setErrorMessage("Password must be at least 6 characters.");
+      return;
+    }
+
+    setIsSigningUp(true);
     setErrorMessage(null);
-    setMagicLinkMessage(null);
+    setSuccessMessage(null);
 
     try {
-      await signInWithPassword(email, password);
-      router.replace("/");
+      await signUp(email, password);
+      setSuccessMessage(
+        "Account created! Check your email to confirm, then sign in."
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Sign-in failed. Please check your credentials."
+          : "Sign-up failed. Please try again."
       );
     } finally {
-      setIsSigningIn(false);
-    }
-  };
-
-  const handleMagicLink = async () => {
-    if (!isConfigured) {
-      setErrorMessage("Add valid Supabase environment variables before sending magic links.");
-      return;
-    }
-
-    if (!email.trim()) {
-      setErrorMessage("Enter your teacher email to receive a magic link.");
-      return;
-    }
-
-    setIsSendingMagicLink(true);
-    setErrorMessage(null);
-
-    try {
-      await sendMagicLink(email);
-      setMagicLinkMessage(`Magic link sent to ${email.trim()}. Open it on this device to sign in.`);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "We could not send a magic link right now."
-      );
-    } finally {
-      setIsSendingMagicLink(false);
+      setIsSigningUp(false);
     }
   };
 
@@ -88,29 +72,29 @@ export default function LoginScreen() {
             <Badge label="Teacher Workspace" variant="primary" size="md" style={styles.brandBadge} />
             <Text style={styles.title}>ClassPulse AI</Text>
             <Text style={styles.subtitle}>
-              Sign in with your Supabase teacher account and pick up where your last classroom left off.
+              Create your teacher account to start running live classroom sessions with real-time AI insights.
             </Text>
 
             <View style={styles.highlights}>
               <View style={styles.highlightItem}>
-                <Text style={styles.highlightTitle}>Fast classroom launch</Text>
+                <Text style={styles.highlightTitle}>Real-time engagement</Text>
                 <Text style={styles.highlightText}>
-                  Start live sessions, switch into offline mode, and review your synced recents from one home screen.
+                  Monitor student understanding with live pulse checks, polls, and AI-powered question clustering.
                 </Text>
               </View>
               <View style={styles.highlightItem}>
-                <Text style={styles.highlightTitle}>Settings travel with you</Text>
+                <Text style={styles.highlightTitle}>AI-powered insights</Text>
                 <Text style={styles.highlightText}>
-                  Default language, lost threshold, AI, and voice preferences are restored automatically.
+                  Get automatic session summaries, misconception detection, and intervention suggestions.
                 </Text>
               </View>
             </View>
           </View>
 
           <Card variant="default" padding="lg" style={styles.formCard}>
-            <Text style={styles.formTitle}>Teacher sign in</Text>
+            <Text style={styles.formTitle}>Create account</Text>
             <Text style={styles.formSubtitle}>
-              Use email and password, or send yourself a magic link.
+              Sign up with your email and password.
             </Text>
 
             {!isConfigured ? (
@@ -128,9 +112,9 @@ export default function LoginScreen() {
               </View>
             ) : null}
 
-            {magicLinkMessage ? (
+            {successMessage ? (
               <View style={styles.successBox}>
-                <Text style={styles.successText}>{magicLinkMessage}</Text>
+                <Text style={styles.successText}>{successMessage}</Text>
               </View>
             ) : null}
 
@@ -153,7 +137,19 @@ export default function LoginScreen() {
               <TextInput
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Enter your password"
+                placeholder="At least 6 characters"
+                placeholderTextColor={colors.text.tertiary}
+                secureTextEntry
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Confirm password</Text>
+              <TextInput
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Re-enter your password"
                 placeholderTextColor={colors.text.tertiary}
                 secureTextEntry
                 style={styles.input}
@@ -162,30 +158,21 @@ export default function LoginScreen() {
 
             <View style={styles.buttonStack}>
               <Button
-                title="Sign In"
-                onPress={handlePasswordSignIn}
-                loading={isSigningIn}
-                disabled={!email.trim() || !password}
-                size="lg"
-                fullWidth
-              />
-              <Button
-                title="Send Magic Link"
-                onPress={handleMagicLink}
-                loading={isSendingMagicLink}
-                disabled={!email.trim()}
-                variant="outline"
+                title="Create Account"
+                onPress={handleSignUp}
+                loading={isSigningUp}
+                disabled={!email.trim() || !password || !confirmPassword}
                 size="lg"
                 fullWidth
               />
             </View>
 
             <TouchableOpacity
-              onPress={() => router.replace("/(auth)/signup")}
+              onPress={() => router.replace("/(auth)/login")}
               style={styles.switchLink}
             >
               <Text style={styles.switchText}>
-                Don't have an account? <Text style={styles.switchTextBold}>Create one</Text>
+                Already have an account? <Text style={styles.switchTextBold}>Sign in</Text>
               </Text>
             </TouchableOpacity>
           </Card>
@@ -318,7 +305,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   switchLink: {
-    alignItems: "center" as const,
+    alignItems: "center",
     marginTop: spacing.lg,
   },
   switchText: {
@@ -327,6 +314,6 @@ const styles = StyleSheet.create({
   },
   switchTextBold: {
     color: colors.primary[600],
-    fontWeight: "600" as const,
+    fontWeight: "600",
   },
 });

@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useRef } from "react";
 import * as Network from "expo-network";
+import { isVoiceProviderConfigured } from "../services";
 import { useNetworkStore, useSessionStore } from "../stores";
 
 const POLL_INTERVAL = 10_000; // 10 seconds
@@ -44,7 +45,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         setConnectionQuality(quality);
         setSupabaseReachable(true);
         setAIProviderReachable(true);
-        setVoiceServiceReachable(true);
+        setVoiceServiceReachable(isVoiceProviderConfigured());
         updateLastOnline();
       } else if (connected) {
         setConnectionQuality("poor");

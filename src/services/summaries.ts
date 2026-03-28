@@ -615,6 +615,8 @@ function buildSummarySearchIndex(summary: SessionSummaryPayload) {
     formatDateSearchTokens(summary.createdAt),
     summary.aiNarrativeSummary ?? "",
     summary.suggestedNextActivity ?? "",
+    summary.voiceReflectionSummary ?? "",
+    summary.voiceReflectionActions.map((action) => `${action.title} ${action.detail}`).join(" "),
     summary.topClusters.map((cluster) => cluster.title).join(" "),
     summary.topReasonChips.map((chip) => chip.chip.replace(/_/g, " ")).join(" "),
   ]
@@ -674,6 +676,9 @@ function buildFallbackSummary(row: {
   suggestedNextActivity?: string;
   voiceReflectionUri?: string;
   voiceReflectionTranscript?: string;
+  voiceReflectionSummary?: string;
+  voiceReflectionActions?: SessionSummaryPayload["voiceReflectionActions"];
+  voiceReflectionActionSource?: SessionSummaryPayload["voiceReflectionActionSource"];
   createdAt: string;
   updatedAt?: string;
   synced?: boolean;
@@ -703,6 +708,9 @@ function buildFallbackSummary(row: {
     suggestedNextActivity: row.suggestedNextActivity,
     voiceReflectionUri: row.voiceReflectionUri,
     voiceReflectionTranscript: row.voiceReflectionTranscript,
+    voiceReflectionSummary: row.voiceReflectionSummary,
+    voiceReflectionActions: row.voiceReflectionActions ?? [],
+    voiceReflectionActionSource: row.voiceReflectionActionSource,
     summarySource: row.summarySource,
     synced: row.synced,
     createdAt: row.createdAt,
@@ -727,6 +735,9 @@ function mergeStoredSummary(
     suggestedNextActivity?: string | null;
     voiceReflectionUri?: string | null;
     voiceReflectionTranscript?: string | null;
+    voiceReflectionSummary?: string | null;
+    voiceReflectionActions?: SessionSummaryPayload["voiceReflectionActions"];
+    voiceReflectionActionSource?: SessionSummaryPayload["voiceReflectionActionSource"];
     createdAt: string;
     updatedAt?: string;
     synced?: boolean;
@@ -738,6 +749,9 @@ function mergeStoredSummary(
     suggestedNextActivity: row.suggestedNextActivity ?? undefined,
     voiceReflectionUri: row.voiceReflectionUri ?? undefined,
     voiceReflectionTranscript: row.voiceReflectionTranscript ?? undefined,
+    voiceReflectionSummary: row.voiceReflectionSummary ?? undefined,
+    voiceReflectionActions: row.voiceReflectionActions ?? [],
+    voiceReflectionActionSource: row.voiceReflectionActionSource,
   });
 
   if (!payload) {
@@ -768,6 +782,18 @@ function mergeStoredSummary(
       payload.voiceReflectionTranscript ??
       row.voiceReflectionTranscript ??
       fallback.voiceReflectionTranscript,
+    voiceReflectionSummary:
+      payload.voiceReflectionSummary ??
+      row.voiceReflectionSummary ??
+      fallback.voiceReflectionSummary,
+    voiceReflectionActions:
+      payload.voiceReflectionActions ??
+      row.voiceReflectionActions ??
+      fallback.voiceReflectionActions,
+    voiceReflectionActionSource:
+      payload.voiceReflectionActionSource ??
+      row.voiceReflectionActionSource ??
+      fallback.voiceReflectionActionSource,
     summarySource:
       payload.summarySource ?? row.summarySource ?? fallback.summarySource,
     createdAt: payload.createdAt || fallback.createdAt,
@@ -1129,6 +1155,9 @@ export async function updateSessionSummaryVoiceReflection(args: {
   sessionId: string;
   voiceReflectionUri?: string;
   voiceReflectionTranscript?: string;
+  voiceReflectionSummary?: string;
+  voiceReflectionActions?: SessionSummaryPayload["voiceReflectionActions"];
+  voiceReflectionActionSource?: SessionSummaryPayload["voiceReflectionActionSource"];
   attemptRemoteSync?: boolean;
   queueOnFailure?: boolean;
 }) {
@@ -1143,6 +1172,12 @@ export async function updateSessionSummaryVoiceReflection(args: {
       voiceReflectionUri: args.voiceReflectionUri ?? existing.voiceReflectionUri,
       voiceReflectionTranscript:
         args.voiceReflectionTranscript ?? existing.voiceReflectionTranscript,
+      voiceReflectionSummary:
+        args.voiceReflectionSummary ?? existing.voiceReflectionSummary,
+      voiceReflectionActions:
+        args.voiceReflectionActions ?? existing.voiceReflectionActions,
+      voiceReflectionActionSource:
+        args.voiceReflectionActionSource ?? existing.voiceReflectionActionSource,
     },
     {
       attemptRemoteSync: args.attemptRemoteSync,
@@ -1161,6 +1196,9 @@ export async function generateSessionSummary(
     forceRegenerate?: boolean;
     voiceReflectionUri?: string;
     voiceReflectionTranscript?: string;
+    voiceReflectionSummary?: string;
+    voiceReflectionActions?: SessionSummaryPayload["voiceReflectionActions"];
+    voiceReflectionActionSource?: SessionSummaryPayload["voiceReflectionActionSource"];
   }
 ): Promise<SessionSummaryPayload> {
   const existing = await getSessionSummary(session.id);
@@ -1177,6 +1215,13 @@ export async function generateSessionSummary(
           voiceReflectionTranscript:
             options.voiceReflectionTranscript ??
             existing.voiceReflectionTranscript,
+          voiceReflectionSummary:
+            options.voiceReflectionSummary ?? existing.voiceReflectionSummary,
+          voiceReflectionActions:
+            options.voiceReflectionActions ?? existing.voiceReflectionActions,
+          voiceReflectionActionSource:
+            options.voiceReflectionActionSource ??
+            existing.voiceReflectionActionSource,
         },
         {
           attemptRemoteSync: options.attemptRemoteSync,
@@ -1283,6 +1328,9 @@ export async function generateSessionSummary(
     overallRecoveryScore,
     voiceReflectionUri: options?.voiceReflectionUri,
     voiceReflectionTranscript: options?.voiceReflectionTranscript,
+    voiceReflectionSummary: options?.voiceReflectionSummary,
+    voiceReflectionActions: options?.voiceReflectionActions ?? [],
+    voiceReflectionActionSource: options?.voiceReflectionActionSource,
     summarySource: "fallback",
     createdAt: sessionEnd,
     updatedAt: new Date().toISOString(),

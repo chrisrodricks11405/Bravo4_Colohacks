@@ -23,8 +23,12 @@ interface AIReteachPanelProps {
   pack: ReteachPack | null;
   isAvailable: boolean;
   isLoading: boolean;
+  voiceAvailable: boolean;
+  isSpeaking: boolean;
   onGenerate: () => void;
   onCopy: (label: string, text: string) => void;
+  onSpeak: (label: string, text: string) => void;
+  onStopSpeaking: () => void;
 }
 
 export function AIReteachPanel({
@@ -33,8 +37,12 @@ export function AIReteachPanel({
   pack,
   isAvailable,
   isLoading,
+  voiceAvailable,
+  isSpeaking,
   onGenerate,
   onCopy,
+  onSpeak,
+  onStopSpeaking,
 }: AIReteachPanelProps) {
   const sections = useMemo(
     () => [
@@ -94,6 +102,9 @@ export function AIReteachPanel({
               variant={isAvailable ? "success" : "neutral"}
               size="md"
             />
+            {voiceAvailable ? (
+              <Badge label="Read aloud ready" variant="info" size="md" />
+            ) : null}
           </View>
           <Text style={styles.title}>AI Reteach Panel</Text>
           <Text style={styles.subtitle}>
@@ -164,6 +175,20 @@ export function AIReteachPanel({
             disabled={!pack || activeSection.value.trim().length === 0}
             style={styles.copyButton}
           />
+          {voiceAvailable ? (
+            <Button
+              title={isSpeaking ? "Stop audio" : "Read aloud"}
+              onPress={() =>
+                isSpeaking
+                  ? onStopSpeaking()
+                  : onSpeak(activeSection.title, activeSection.value)
+              }
+              variant="ghost"
+              size="sm"
+              disabled={!pack || activeSection.value.trim().length === 0}
+              style={styles.copyButton}
+            />
+          ) : null}
         </View>
 
         <Text style={styles.sectionBody}>
