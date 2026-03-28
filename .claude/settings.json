@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --yes expo install expo-router expo-linking expo-constants expo-status-bar react-native-safe-area-context react-native-screens expo-sqlite expo-secure-store expo-network expo-av @react-native-async-storage/async-storage react-native-reanimated react-native-gesture-handler)"
+    ]
+  }
+}
