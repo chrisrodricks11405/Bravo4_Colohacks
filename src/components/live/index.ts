@@ -1,9 +1,14 @@
 export { AIReteachPanel } from "./AIReteachPanel";
 export { AIInsightStrip } from "./AIInsightStrip";
+export { AnnouncementPanel } from "./AnnouncementPanel";
 export { ConfusionSparkline } from "./ConfusionSparkline";
+export { EngagementPanel } from "./EngagementPanel";
 export { InterventionActionPanel } from "./InterventionActionPanel";
 export { InterventionHistoryPanel } from "./InterventionHistoryPanel";
 export { MetricCard } from "./MetricCard";
 export { MisconceptionClusterDrawer } from "./MisconceptionClusterDrawer";
 export { PulseBar } from "./PulseBar";
 export { QuickPollPanel } from "./QuickPollPanel";
+export { ReactionStreamPanel } from "./ReactionStreamPanel";
+export { ReasonDistributionPanel } from "./ReasonDistributionPanel";
+export type { ReasonCount } from "./ReasonDistributionPanel";

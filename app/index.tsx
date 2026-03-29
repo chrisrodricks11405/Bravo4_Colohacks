@@ -23,11 +23,11 @@ export default function Index() {
   }
 
   if (activeSession?.status === "lobby") {
-    return <Redirect href="/session/lobby" />;
+    return <Redirect href={{ pathname: "/session/lobby", params: { sessionId: activeSession.id } }} />;
   }
 
   if (activeSession?.status === "active" || activeSession?.status === "paused") {
-    return <Redirect href="/session/live" />;
+    return <Redirect href={{ pathname: "/session/live", params: { sessionId: activeSession.id } }} />;
   }
 
   return <Redirect href="/(tabs)" />;

@@ -22,15 +22,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const overview = await getSyncQueueOverview();
-    setSyncOverview({
-      pendingSyncCount:
-        overview.pendingJobs + overview.failedJobs + overview.inProgressJobs,
-      failedSyncCount: overview.failedJobs,
-      localQueueCount: overview.localQueueCount,
-      lastSyncAt: overview.lastSyncAt,
-      nextRetryAt: overview.nextRetryAt,
-    });
+    try {
+      const overview = await getSyncQueueOverview();
+      setSyncOverview({
+        pendingSyncCount:
+          overview.pendingJobs + overview.failedJobs + overview.inProgressJobs,
+        failedSyncCount: overview.failedJobs,
+        localQueueCount: overview.localQueueCount,
+        lastSyncAt: overview.lastSyncAt,
+        nextRetryAt: overview.nextRetryAt,
+      });
+    } catch (error) {
+      console.error("Failed to refresh sync overview:", error);
+    }
   }, [isDatabaseReady, setSyncOverview]);
 
   const executeSync = useCallback(async () => {
@@ -67,6 +71,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         message: null,
         lastSyncAt: result.overview.lastSyncAt,
       });
+    } catch (error) {
+      console.error("Failed to run sync engine:", error);
     } finally {
       runningRef.current = false;
       await refreshOverview();

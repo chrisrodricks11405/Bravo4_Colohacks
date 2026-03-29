@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import {
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -42,6 +43,7 @@ export default function SessionLobbyScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId?: string | string[] }>();
   const { isHydrating } = useSessionHydration();
   const storeSessionMode = useSessionStore((state) => state.session?.mode);
+  const setStoredSession = useSessionStore((state) => state.setSession);
   const setNetworkMode = useNetworkStore((state) => state.setMode);
   const isConnected = useNetworkStore((state) => state.isConnected);
   const connectionQuality = useNetworkStore((state) => state.connectionQuality);
@@ -75,7 +77,7 @@ export default function SessionLobbyScreen() {
     }
   }, [router, session?.id, session?.status]);
 
-  const isBusy = isHydrating || isLoading;
+  const isBusy = !session && (isHydrating || isLoading);
 
   if (isBusy) {
     return (
@@ -102,6 +104,7 @@ export default function SessionLobbyScreen() {
   const canSyncImmediately = session.mode === "online" && supabaseReachable && hasSupabaseConfig;
   const displayedRemoteState = session.mode === "offline" ? "disabled" : remoteState;
   const quality = getQualityMeta(connectionQuality);
+  const isCompactLayout = width < 1180;
 
   const handleLockPress = async () => {
     try { await lockSession(canSyncImmediately); } catch {}
@@ -125,211 +128,222 @@ export default function SessionLobbyScreen() {
   const handleBeginClass = async () => {
     try {
       const nextSession = await beginClass(canSyncImmediately);
+      setStoredSession(nextSession);
       router.replace({ pathname: "/session/live", params: { sessionId: nextSession.id } });
-    } catch {}
+    } catch (beginError) {
+      Alert.alert(
+        "Could not begin class",
+        beginError instanceof Error ? beginError.message : "Try again in a moment."
+      );
+    }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <Sentry.TimeToInitialDisplay record />
 
-      {/* Top bar */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarLeft}>
-          <Badge
-            label="Session Lobby"
-            variant={session.mode === "offline" ? "warning" : "success"}
-            size="md"
-          />
-          <Text style={styles.topBarTitle}>{session.subject} — {session.topic}</Text>
-        </View>
-        <View style={styles.topBarRight}>
-          {/* Network quality indicator */}
-          <View style={styles.signalBars}>
-            {[0, 1, 2, 3].map((bar) => (
-              <View
-                key={bar}
-                style={[
-                  styles.signalBar,
-                  { height: 10 + bar * 5 },
-                  bar < quality.activeBars && { backgroundColor: quality.color },
-                ]}
-              />
-            ))}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Top bar */}
+        <View style={[styles.topBar, isCompactLayout && styles.topBarCompact]}>
+          <View style={[styles.topBarLeft, isCompactLayout && styles.topBarLeftCompact]}>
+            <Badge
+              label="Session Lobby"
+              variant={session.mode === "offline" ? "warning" : "success"}
+              size="md"
+            />
+            <Text style={styles.topBarTitle}>{session.subject} — {session.topic}</Text>
           </View>
-          <StatusChip status={isConnected ? "online" : "offline"} />
+          <View style={styles.topBarRight}>
+            {/* Network quality indicator */}
+            <View style={styles.signalBars}>
+              {[0, 1, 2, 3].map((bar) => (
+                <View
+                  key={bar}
+                  style={[
+                    styles.signalBar,
+                    { height: 10 + bar * 5 },
+                    bar < quality.activeBars && { backgroundColor: quality.color },
+                  ]}
+                />
+              ))}
+            </View>
+            <StatusChip status={isConnected ? "online" : "offline"} />
+          </View>
         </View>
-      </View>
 
-      <View style={styles.content}>
-        {/* Left: QR + Code */}
-        <View style={styles.qrColumn}>
-          <View style={styles.qrArea}>
-            {/* QR card with subtle shadow */}
-            <View style={styles.qrCard}>
-              <QRCode
-                value={session.qrPayload}
-                size={qrSize}
-                color={colors.text.primary}
-                backgroundColor={colors.surface.card}
-              />
+        <View style={[styles.content, isCompactLayout && styles.contentCompact]}>
+          {/* Left: QR + Code */}
+          <View style={[styles.qrColumn, isCompactLayout && styles.qrColumnCompact]}>
+            <View style={styles.qrArea}>
+              {/* QR card with subtle shadow */}
+              <View style={styles.qrCard}>
+                <QRCode
+                  value={session.qrPayload}
+                  size={qrSize}
+                  color={colors.text.primary}
+                  backgroundColor={colors.surface.card}
+                />
+              </View>
+
+              {/* Join code */}
+              <View style={styles.codeBlock}>
+                <Text style={styles.codeValue}>{formatJoinCode(session.joinCode)}</Text>
+              </View>
+              <Text style={styles.codeHint}>Share this code with students</Text>
             </View>
 
-            {/* Join code */}
-            <View style={styles.codeBlock}>
-              <Text style={styles.codeValue}>{formatJoinCode(session.joinCode)}</Text>
-            </View>
-            <Text style={styles.codeHint}>Share this code with students</Text>
-          </View>
-
-          {/* Metrics */}
-          <View style={styles.metricsRow}>
-            <Card variant="default" padding="lg" style={styles.metricCard}>
-              <Text style={styles.metricLabel}>STUDENTS JOINED</Text>
-              <Text style={styles.metricValue}>{session.participantCount}</Text>
-              <Text style={styles.metricSupporting}>
-                {displayedRemoteState === "live" ? "Updating live" : "Waiting for joins"}
-              </Text>
-            </Card>
-            <Card variant="default" padding="lg" style={styles.metricCard}>
-              <Text style={styles.metricLabel}>NETWORK QUALITY</Text>
-              <View style={styles.metricSignalRow}>
-                <View style={styles.metricSignalBars}>
-                  {[0, 1, 2, 3].map((bar) => (
-                    <View
-                      key={bar}
-                      style={[
-                        styles.metricSignalBar,
-                        { height: 8 + bar * 4 },
-                        bar < quality.activeBars && { backgroundColor: quality.color },
-                      ]}
-                    />
-                  ))}
-                </View>
-                <Text style={styles.metricValue}>{quality.label}</Text>
-              </View>
-            </Card>
-          </View>
-
-          {/* Action buttons */}
-          <View style={styles.actionRow}>
-            <Button
-              title="Begin Class"
-              onPress={handleBeginClass}
-              loading={isStartingClass}
-              size="lg"
-              style={styles.beginButton}
-            />
-            <Button
-              title={session.lockedAt ? "Unlock" : "Lock Lobby"}
-              onPress={handleLockPress}
-              loading={isLocking}
-              variant="outline"
-              size="lg"
-              style={styles.actionButton}
-            />
-            <Button
-              title="Regenerate Code"
-              onPress={handleRegeneratePress}
-              loading={isRegeneratingCode}
-              variant="ghost"
-              size="lg"
-              style={styles.actionButton}
-            />
-          </View>
-        </View>
-
-        {/* Right: Session details */}
-        <View style={styles.detailColumn}>
-          <Card variant="tonal" padding="lg" style={styles.detailCard}>
-            <Text style={styles.detailTitle}>Class Setup</Text>
-            <View style={styles.detailGrid}>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Subject</Text>
-                <Text style={styles.detailValue}>{session.subject}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Topic</Text>
-                <Text style={styles.detailValue}>{session.topic}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Class</Text>
-                <Text style={styles.detailValue}>{session.gradeClass}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Language</Text>
-                <Text style={styles.detailValue}>{session.language}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Lost Threshold</Text>
-                <Text style={styles.detailValue}>{session.lostThreshold}%</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Mode</Text>
-                <Text style={styles.detailValue}>
-                  {session.mode === "offline" ? "Offline Hotspot" : "Online Realtime"}
+            {/* Metrics */}
+            <View style={[styles.metricsRow, isCompactLayout && styles.metricsRowCompact]}>
+              <Card variant="default" padding="lg" style={styles.metricCard}>
+                <Text style={styles.metricLabel}>STUDENTS JOINED</Text>
+                <Text style={styles.metricValue}>{session.participantCount}</Text>
+                <Text style={styles.metricSupporting}>
+                  {displayedRemoteState === "live" ? "Updating live" : "Waiting for joins"}
                 </Text>
-              </View>
+              </Card>
+              <Card variant="default" padding="lg" style={styles.metricCard}>
+                <Text style={styles.metricLabel}>NETWORK QUALITY</Text>
+                <View style={styles.metricSignalRow}>
+                  <View style={styles.metricSignalBars}>
+                    {[0, 1, 2, 3].map((bar) => (
+                      <View
+                        key={bar}
+                        style={[
+                          styles.metricSignalBar,
+                          { height: 8 + bar * 4 },
+                          bar < quality.activeBars && { backgroundColor: quality.color },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={styles.metricValue}>{quality.label}</Text>
+                </View>
+              </Card>
             </View>
 
-            {session.lessonPlanSeed ? (
-              <View style={styles.seedBlock}>
-                <Text style={styles.detailLabel}>Lesson Seed</Text>
-                <Text style={styles.seedText}>{session.lessonPlanSeed}</Text>
+            {/* Action buttons */}
+            <View style={[styles.actionRow, isCompactLayout && styles.actionRowCompact]}>
+              <Button
+                title="Begin Class"
+                onPress={handleBeginClass}
+                loading={isStartingClass}
+                size="lg"
+                style={styles.beginButton}
+              />
+              <Button
+                title={session.lockedAt ? "Unlock" : "Lock Lobby"}
+                onPress={handleLockPress}
+                loading={isLocking}
+                variant="outline"
+                size="lg"
+                style={styles.actionButton}
+              />
+              <Button
+                title="Regenerate Code"
+                onPress={handleRegeneratePress}
+                loading={isRegeneratingCode}
+                variant="ghost"
+                size="lg"
+                style={styles.actionButton}
+              />
+            </View>
+          </View>
+
+          {/* Right: Session details */}
+          <View style={[styles.detailColumn, isCompactLayout && styles.detailColumnCompact]}>
+            <Card variant="tonal" padding="lg" style={styles.detailCard}>
+              <Text style={styles.detailTitle}>Class Setup</Text>
+              <View style={styles.detailGrid}>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Subject</Text>
+                  <Text style={styles.detailValue}>{session.subject}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Topic</Text>
+                  <Text style={styles.detailValue}>{session.topic}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Class</Text>
+                  <Text style={styles.detailValue}>{session.gradeClass}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Language</Text>
+                  <Text style={styles.detailValue}>{session.language}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Alert Sensitivity</Text>
+                  <Text style={styles.detailValue}>{session.lostThreshold}%</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Mode</Text>
+                  <Text style={styles.detailValue}>
+                    {session.mode === "offline" ? "Offline" : "Online"}
+                  </Text>
+                </View>
+              </View>
+
+              {session.lessonPlanSeed ? (
+                <View style={styles.seedBlock}>
+                  <Text style={styles.detailLabel}>Lesson Notes</Text>
+                  <Text style={styles.seedText}>{session.lessonPlanSeed}</Text>
+                </View>
+              ) : null}
+            </Card>
+
+            <Card variant="tonal" padding="lg" style={styles.detailCard}>
+              <Text style={styles.detailTitle}>Status</Text>
+              <View style={styles.statusRows}>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Connection</Text>
+                  <StatusChip status={isConnected ? "online" : "offline"} />
+                </View>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Live Updates</Text>
+                  <Badge
+                    label={
+                      displayedRemoteState === "live" ? "Active"
+                        : displayedRemoteState === "connecting" ? "Connecting"
+                        : displayedRemoteState === "disabled" ? "Off"
+                        : "Reconnecting"
+                    }
+                    variant={
+                      displayedRemoteState === "live" ? "success"
+                        : displayedRemoteState === "connecting" ? "info"
+                        : "neutral"
+                    }
+                    size="sm"
+                  />
+                </View>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Lobby</Text>
+                  <Badge
+                    label={session.lockedAt ? "Locked" : "Open"}
+                    variant={session.lockedAt ? "error" : "success"}
+                    size="sm"
+                  />
+                </View>
+              </View>
+            </Card>
+
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
-          </Card>
 
-          <Card variant="tonal" padding="lg" style={styles.detailCard}>
-            <Text style={styles.detailTitle}>Network Status</Text>
-            <View style={styles.statusRows}>
-              <View style={styles.statusRow}>
-                <Text style={styles.statusLabel}>Connection</Text>
-                <StatusChip status={isConnected ? "online" : "offline"} />
-              </View>
-              <View style={styles.statusRow}>
-                <Text style={styles.statusLabel}>Realtime</Text>
-                <Badge
-                  label={
-                    displayedRemoteState === "live" ? "Live"
-                      : displayedRemoteState === "connecting" ? "Connecting"
-                      : displayedRemoteState === "disabled" ? "Off"
-                      : "Degraded"
-                  }
-                  variant={
-                    displayedRemoteState === "live" ? "success"
-                      : displayedRemoteState === "connecting" ? "info"
-                      : "neutral"
-                  }
-                  size="sm"
-                />
-              </View>
-              <View style={styles.statusRow}>
-                <Text style={styles.statusLabel}>Session</Text>
-                <Badge
-                  label={session.lockedAt ? "Locked" : "Open"}
-                  variant={session.lockedAt ? "error" : "success"}
-                  size="sm"
-                />
-              </View>
-            </View>
-          </Card>
-
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => router.replace("/(tabs)")}
-            style={styles.backLink}
-          >
-            <Text style={styles.backLinkText}>← Return to home</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.replace("/(tabs)")}
+              style={styles.backLink}
+            >
+              <Text style={styles.backLinkText}>← Return to home</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -338,6 +352,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.xl,
   },
 
   // Top bar
@@ -348,10 +366,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.base,
   },
+  topBarCompact: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
   topBarLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
+  },
+  topBarLeftCompact: {
+    flexWrap: "wrap",
   },
   topBarTitle: {
     ...textStyles.headingSmall,
@@ -375,11 +401,12 @@ const styles = StyleSheet.create({
 
   // Content
   content: {
-    flex: 1,
     flexDirection: "row",
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
     gap: spacing.xl,
+  },
+  contentCompact: {
+    flexDirection: "column",
   },
 
   // QR Column
@@ -388,6 +415,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: spacing.xl,
+  },
+  qrColumnCompact: {
+    width: "100%",
   },
   qrArea: {
     alignItems: "center",
@@ -426,6 +456,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     width: "100%",
     maxWidth: 480,
+  },
+  metricsRowCompact: {
+    flexDirection: "column",
+    maxWidth: "100%",
   },
   metricCard: {
     flex: 1,
@@ -470,6 +504,10 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 480,
   },
+  actionRowCompact: {
+    flexDirection: "column",
+    maxWidth: "100%",
+  },
   beginButton: {
     flex: 2,
   },
@@ -481,6 +519,9 @@ const styles = StyleSheet.create({
   detailColumn: {
     flex: 0.85,
     gap: spacing.base,
+  },
+  detailColumnCompact: {
+    width: "100%",
   },
   detailCard: {
     borderRadius: borderRadius.xl,

@@ -60,8 +60,8 @@ export default function SummariesScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerCopy}>
-            <Text style={styles.title}>Past Summaries</Text>
-            <Text style={styles.subtitle}>Search and revisit session insights</Text>
+            <Text style={styles.title}>Session History</Text>
+            <Text style={styles.subtitle}>Review past sessions and what students struggled with</Text>
           </View>
           <Badge
             label={isSyncing ? "Syncing…" : `${summaries.length} saved`}
@@ -87,7 +87,7 @@ export default function SummariesScreen() {
 
         {syncError ? (
           <Card variant="default" padding="lg" style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Summary sync needs attention</Text>
+            <Text style={styles.errorTitle}>Could not load summaries</Text>
             <Text style={styles.errorText}>{syncError}</Text>
           </Card>
         ) : null}
@@ -100,10 +100,10 @@ export default function SummariesScreen() {
         ) : summaries.length === 0 ? (
           <Card variant="tonal" padding="xl" style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>
-              {query.trim() ? "No summaries match that search" : "Your summary history is empty"}
+              {query.trim() ? "No sessions match your search" : "No sessions yet"}
             </Text>
             <Text style={styles.emptyText}>
-              {query.trim() ? "Try a broader topic or date." : "End a session to generate your first summary."}
+              {query.trim() ? "Try a different search term." : "Complete your first session to see a summary here."}
             </Text>
           </Card>
         ) : (
@@ -144,15 +144,10 @@ export default function SummariesScreen() {
                 {/* Detail pills */}
                 <View style={styles.pillRow}>
                   <View style={styles.pill}>
-                    <Text style={styles.pillText}>{summary.peakConfusionMoments.length} Peaks</Text>
+                    <Text style={styles.pillText}>{summary.peakConfusionMoments.length} Key Moments</Text>
                   </View>
                   <View style={styles.pill}>
-                    <Text style={styles.pillText}>{summary.topClusters.length} Clusters</Text>
-                  </View>
-                  <View style={styles.pill}>
-                    <Text style={styles.pillText}>
-                      {summary.summarySource === "edge" ? "Edge AI" : "Fallback"}
-                    </Text>
+                    <Text style={styles.pillText}>{summary.topClusters.length} Topics</Text>
                   </View>
                 </View>
 
@@ -170,14 +165,8 @@ export default function SummariesScreen() {
                 {/* Footer */}
                 <View style={styles.footer}>
                   <Text style={styles.footerText} numberOfLines={1}>
-                    Next: {summary.suggestedNextActivity ?? "Quick recap + confidence check"}
+                    Next step: {summary.suggestedNextActivity ?? "Quick recap + confidence check"}
                   </Text>
-                  <Badge
-                    label={summary.synced ? "Synced" : "Local"}
-                    variant={summary.synced ? "success" : "warning"}
-                    size="sm"
-                    dot
-                  />
                 </View>
               </Card>
             ))}

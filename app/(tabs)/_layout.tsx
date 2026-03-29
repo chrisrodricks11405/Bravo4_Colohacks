@@ -5,17 +5,15 @@ import { StateScreen } from "../../src/components/app/StateScreen";
 import { useAuth } from "../../src/providers";
 import { colors, spacing, textStyles } from "../../src/theme";
 
-function TabIcon({ label, focused }: { label: string; focused: boolean }) {
+function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
   return (
-    <View style={styles.tabIconContainer}>
-      <Text
-        style={[
-          styles.tabLabel,
-          focused ? styles.tabLabelActive : styles.tabLabelInactive,
-        ]}
-      >
-        {label}
-      </Text>
+    <View
+      style={[
+        styles.tabIconContainer,
+        focused && styles.tabIconContainerActive,
+      ]}
+    >
+      <Text style={styles.tabIcon}>{icon}</Text>
     </View>
   );
 }
@@ -52,16 +50,25 @@ export default function TabLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="H" focused={focused} />
+            <TabIcon icon="🏠" focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
         name="summaries"
         options={{
-          title: "Summaries",
+          title: "History",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="S" focused={focused} />
+            <TabIcon icon="📋" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="intelligence"
+        options={{
+          title: "Insights",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon icon="💡" focused={focused} />
           ),
         }}
       />
@@ -70,16 +77,16 @@ export default function TabLayout() {
         options={{
           title: "Weekly",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="W" focused={focused} />
+            <TabIcon icon="📊" focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
         name="sync"
         options={{
-          title: "Sync",
+          title: "Data",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="SY" focused={focused} />
+            <TabIcon icon="☁️" focused={focused} />
           ),
         }}
       />
@@ -88,7 +95,7 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="G" focused={focused} />
+            <TabIcon icon="⚙️" focused={focused} />
           ),
         }}
       />
@@ -110,20 +117,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   tabIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  tabLabel: {
-    fontSize: 18,
-    fontWeight: "700",
+  tabIconContainerActive: {
+    backgroundColor: colors.primary[50],
   },
-  tabLabelActive: {
-    color: colors.primary[600],
-  },
-  tabLabelInactive: {
-    color: colors.text.tertiary,
+  tabIcon: {
+    fontSize: 20,
   },
 });

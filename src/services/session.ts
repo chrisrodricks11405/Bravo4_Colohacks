@@ -9,6 +9,7 @@ import {
 import { addMonitoringBreadcrumb, captureMonitoringException } from "../lib/monitoring";
 import { sanitizeSessionField } from "../lib/sanitization";
 import { queueSyncJob } from "./syncJobs";
+import { broadcastSessionStatus } from "./studentLiveBroadcast";
 import type { SessionCreatePayload, SessionMeta, SessionStatus, SyncJobType } from "../types";
 import { upsertRecentSessions } from "./recentSessions";
 
@@ -449,6 +450,13 @@ async function saveSessionState(
   }
 
   await upsertRecentSessions([toRecentSession(session, synced, confusionIndexAvg)]);
+
+  if (synced) {
+    await broadcastSessionStatus(session.id, {
+      sessionId: session.id,
+      status: session.lockedAt ? "locked" : session.status === "ended" ? "ended" : "active",
+    });
+  }
 
   return session;
 }

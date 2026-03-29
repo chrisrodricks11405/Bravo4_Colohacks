@@ -33,7 +33,9 @@ export function useSessionLobby(sessionId?: string, realtimeEnabled = true) {
       : null;
 
   const hydrateSession = useCallback(async () => {
-    if (!resolvedSessionId && !activeSession) {
+    const currentSession = useSessionStore.getState().session;
+
+    if (!resolvedSessionId && !currentSession) {
       setIsLoading(false);
       return;
     }
@@ -43,8 +45,8 @@ export function useSessionLobby(sessionId?: string, realtimeEnabled = true) {
 
     try {
       const persisted =
-        activeSession && (!resolvedSessionId || activeSession.id === resolvedSessionId)
-          ? activeSession
+        currentSession && (!resolvedSessionId || currentSession.id === resolvedSessionId)
+          ? currentSession
           : await getPersistedSession(resolvedSessionId);
 
       if (!persisted) {
@@ -74,7 +76,7 @@ export function useSessionLobby(sessionId?: string, realtimeEnabled = true) {
     } finally {
       setIsLoading(false);
     }
-  }, [activeSession, resolvedSessionId, realtimeEnabled, setSession]);
+  }, [resolvedSessionId, realtimeEnabled, setSession]);
 
   useEffect(() => {
     void hydrateSession();

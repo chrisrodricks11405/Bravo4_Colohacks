@@ -277,7 +277,7 @@ export default function SettingsScreen() {
               </View>
             </View>
             <View style={styles.fieldRowItem}>
-              <FieldLabel label="LOST THRESHOLD (MIN)" />
+              <FieldLabel label="ALERT SENSITIVITY (%)" />
               <View style={styles.stepperRow}>
                 <TouchableOpacity
                   style={styles.stepperButton}
@@ -314,8 +314,8 @@ export default function SettingsScreen() {
 
           <View style={styles.toggleRow}>
             <View style={styles.toggleCopy}>
-              <Text style={styles.toggleTitle}>AI Provider Premium</Text>
-              <Text style={styles.toggleDescription}>Use advanced LLM for deeper student sentiment analysis</Text>
+              <Text style={styles.toggleTitle}>AI Analysis</Text>
+              <Text style={styles.toggleDescription}>Use AI to understand student confusion patterns and suggest improvements</Text>
             </View>
             <Switch
               value={draft.aiProviderEnabled}
@@ -328,7 +328,7 @@ export default function SettingsScreen() {
           <View style={styles.toggleRow}>
             <View style={styles.toggleCopy}>
               <Text style={styles.toggleTitle}>Voice Recognition</Text>
-              <Text style={styles.toggleDescription}>Enable real-time transcription and speaker identification</Text>
+              <Text style={styles.toggleDescription}>Enable voice summaries and audio playback for session reviews</Text>
             </View>
             <Switch
               value={draft.voiceEnabled}

@@ -1,3 +1,4 @@
+import type { SQLiteDatabase } from "expo-sqlite";
 import { getDatabase } from "../db";
 import { hasSupabaseConfig } from "../lib/supabase";
 import { useNetworkStore } from "../stores";
@@ -400,14 +401,15 @@ export async function retryFailedSyncJobs(): Promise<void> {
   await syncOverviewToStore();
 }
 
-async function countRows(sql: string): Promise<number> {
-  const db = await getDatabase();
+async function countRows(
+  db: SQLiteDatabase,
+  sql: string
+): Promise<number> {
   const row = await db.getFirstAsync<CountRow>(sql);
   return row?.count ?? 0;
 }
 
-async function getLocalQueueCount(): Promise<number> {
-  const db = await getDatabase();
+async function getLocalQueueCount(db: SQLiteDatabase): Promise<number> {
   const row = await db.getFirstAsync<CountRow>(
     `
       SELECT (
@@ -437,27 +439,39 @@ export async function getSyncQueueOverview(): Promise<SyncQueueOverview> {
     lastSyncRow,
     nextRetryRow,
   ] = await Promise.all([
-    countRows(`
+    countRows(
+      db,
+      `
       SELECT COUNT(*) AS count
       FROM pending_sync_jobs
       WHERE status = 'pending';
-    `),
-    countRows(`
+    `
+    ),
+    countRows(
+      db,
+      `
       SELECT COUNT(*) AS count
       FROM pending_sync_jobs
       WHERE status = 'failed';
-    `),
-    countRows(`
+    `
+    ),
+    countRows(
+      db,
+      `
       SELECT COUNT(*) AS count
       FROM pending_sync_jobs
       WHERE status = 'in_progress';
-    `),
-    countRows(`
+    `
+    ),
+    countRows(
+      db,
+      `
       SELECT COUNT(*) AS count
       FROM pending_sync_jobs
       WHERE status = 'completed';
-    `),
-    getLocalQueueCount(),
+    `
+    ),
+    getLocalQueueCount(db),
     db.getFirstAsync<LastSyncRow>(
       `
         SELECT MAX(completed_at) AS last_sync_at

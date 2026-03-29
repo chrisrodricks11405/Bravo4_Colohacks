@@ -758,6 +758,48 @@ export async function getPollDistribution(
   return computePollDistribution(poll, responses);
 }
 
+function toStudentPollPayload(poll: QuickPollPayload) {
+  return {
+    pollId: poll.id,
+    sessionId: poll.sessionId,
+    question: poll.question,
+    options: poll.options.map((option) => ({
+      optionId: String(option.index),
+      label: option.text,
+    })),
+    allowAnswerChange: true,
+    allowUnsure: false,
+    closesAt: undefined,
+  };
+}
+
+function toStudentPollResults(
+  poll: QuickPollPayload,
+  distribution: PollDistributionSnapshot
+) {
+  return {
+    pollId: poll.id,
+    results: poll.options.map((option) => {
+      const match =
+        distribution.distribution.find(
+          (entry) => entry.optionIndex === option.index
+        ) ?? null;
+
+      return {
+        optionId: String(option.index),
+        label: option.text,
+        count: match?.count ?? 0,
+        percentage: match?.percent ?? 0,
+      };
+    }),
+    correctOptionId:
+      typeof poll.correctOptionIndex === "number"
+        ? String(poll.correctOptionIndex)
+        : null,
+    totalResponses: distribution.totalResponses,
+  };
+}
+
 export async function refreshPollHistory(
   sessionId: string
 ): Promise<QuickPollPayload[]> {
@@ -935,9 +977,7 @@ export async function pushPoll(
   });
 
   if (options.attemptRemoteSync && hasSupabaseConfig) {
-    await broadcastPollEvent(existing.sessionId, "poll_push", {
-      poll: nextPoll,
-    });
+    await broadcastPollEvent(existing.sessionId, "poll_push", toStudentPollPayload(nextPoll));
   }
 
   addMonitoringBreadcrumb({
@@ -1002,9 +1042,12 @@ export async function closePoll(
   });
 
   if (options.attemptRemoteSync && hasSupabaseConfig) {
+    const distribution = await getPollDistribution(nextPoll);
     await broadcastPollEvent(existing.sessionId, "poll_close", {
       pollId: nextPoll.id,
       sessionId: nextPoll.sessionId,
+      showResults: true,
+      results: toStudentPollResults(nextPoll, distribution),
     });
   }
 

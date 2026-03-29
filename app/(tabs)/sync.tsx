@@ -24,11 +24,11 @@ function formatTimestamp(value: string | null) {
 function getModeBadge(mode: "online" | "offline" | "local_hotspot") {
   switch (mode) {
     case "local_hotspot":
-      return { label: "Local hotspot", status: "offline" as const };
+      return { label: "Local network", status: "offline" as const };
     case "offline":
       return { label: "Offline", status: "offline" as const };
     default:
-      return { label: "Online Mode", status: "online" as const };
+      return { label: "Online", status: "online" as const };
   }
 }
 
@@ -65,7 +65,7 @@ export default function SyncScreen() {
     try {
       const payload = await exportData();
       Clipboard.setString(payload);
-      Alert.alert("Copied", "Sync diagnostics copied to clipboard.");
+      Alert.alert("Copied", "Backup details copied to clipboard.");
     } catch (copyError) {
       Alert.alert("Export unavailable", copyError instanceof Error ? copyError.message : "Try again.");
     }
@@ -83,8 +83,8 @@ export default function SyncScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Offline & Sync</Text>
-            <Text style={styles.subtitle}>Manage local classroom data and cloud synchronization.</Text>
+            <Text style={styles.title}>Data & Backup</Text>
+            <Text style={styles.subtitle}>Your session data is saved locally and backed up to the cloud when connected.</Text>
           </View>
           <View style={styles.headerBadges}>
             <StatusChip status={modeBadge.status} label={modeBadge.label} />
@@ -97,18 +97,18 @@ export default function SyncScreen() {
 
         {/* Stat tiles */}
         <View style={styles.statGrid}>
-          <StatTile label="LOCAL QUEUE" value={String(localQueueCount)} />
-          <StatTile label="PENDING JOBS" value={String(pendingSyncCount)} color={pendingSyncCount > 0 ? colors.primary[600] : undefined} />
-          <StatTile label="FAILED JOBS" value={String(failedSyncCount)} color={failedSyncCount > 0 ? colors.status.error : undefined} />
-          <StatTile label="LAST SYNC" value={formatTimestamp(overview?.lastSyncAt ?? null)} />
+          <StatTile label="SAVED LOCALLY" value={String(localQueueCount)} />
+          <StatTile label="UPLOADING" value={String(pendingSyncCount)} color={pendingSyncCount > 0 ? colors.primary[600] : undefined} />
+          <StatTile label="NEEDS RETRY" value={String(failedSyncCount)} color={failedSyncCount > 0 ? colors.status.error : undefined} />
+          <StatTile label="LAST BACKUP" value={formatTimestamp(overview?.lastSyncAt ?? null)} />
         </View>
 
         {/* Syncing Queue */}
         <Card variant="default" padding="xl" style={styles.syncCard}>
           <View style={styles.syncHeader}>
             <View>
-              <Text style={styles.cardTitle}>Syncing Queue</Text>
-              <Text style={styles.cardSubtitle}>Processing current batch of classroom insights</Text>
+              <Text style={styles.cardTitle}>Upload Progress</Text>
+              <Text style={styles.cardSubtitle}>Backing up your session data to the cloud</Text>
             </View>
             <Text style={styles.syncCount}>
               <Text style={{ color: colors.primary[600], fontWeight: "700" }}>
@@ -125,7 +125,7 @@ export default function SyncScreen() {
 
           <View style={styles.syncActions}>
             <Button
-              title="Force Sync"
+              title="Sync Now"
               onPress={() => { void forceSync(); }}
               loading={isForceSyncing}
               size="md"
@@ -142,7 +142,7 @@ export default function SyncScreen() {
               icon={<Text style={{ fontSize: 14 }}>↻</Text>}
             />
             <Button
-              title="Export Diagnostics"
+              title="Copy Details"
               onPress={() => { void handleExport(); }}
               variant="ghost"
               size="md"
@@ -153,7 +153,7 @@ export default function SyncScreen() {
 
         {error ? (
           <Card variant="default" padding="lg" style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Sync diagnostics need attention</Text>
+            <Text style={styles.errorTitle}>Backup needs attention</Text>
             <Text style={styles.errorText}>{error}</Text>
           </Card>
         ) : null}
@@ -161,8 +161,8 @@ export default function SyncScreen() {
         {/* Active Queue Log */}
         <Card variant="default" padding="xl" style={styles.queueCard}>
           <View style={styles.queueHeader}>
-            <Text style={styles.cardTitle}>Active Queue Log</Text>
-            <Badge label="Real-time update" variant="neutral" size="sm" />
+            <Text style={styles.cardTitle}>Activity Log</Text>
+            <Badge label="Auto-updating" variant="neutral" size="sm" />
           </View>
 
           {/* Table header */}
@@ -173,9 +173,9 @@ export default function SyncScreen() {
           </View>
 
           {isLoading ? (
-            <Text style={styles.emptyText}>Loading sync queue…</Text>
+            <Text style={styles.emptyText}>Loading...</Text>
           ) : jobs.length === 0 ? (
-            <Text style={styles.emptyText}>No sync jobs waiting. All caught up.</Text>
+            <Text style={styles.emptyText}>Everything is backed up. You're all set.</Text>
           ) : (
             <View style={styles.jobList}>
               {jobs.map((job) => (

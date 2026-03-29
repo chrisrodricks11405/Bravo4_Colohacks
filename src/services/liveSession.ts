@@ -48,6 +48,7 @@ type LocalPulseEventRow = {
   pulse: string;
   timestamp: string;
   source: string;
+  reason: string | null;
   synced: number;
   synced_at: string | null;
 };
@@ -101,6 +102,7 @@ type QuestionRow = {
   anonymous_id: string;
   text: string;
   language: string | null;
+  reason: string | null;
   lesson_marker_id: string | null;
   timestamp: string;
   synced?: number;
@@ -189,15 +191,17 @@ const UPSERT_LOCAL_PULSE_EVENT_SQL = `
     pulse,
     timestamp,
     source,
+    reason,
     synced,
     synced_at
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     anonymous_id = excluded.anonymous_id,
     pulse = excluded.pulse,
     timestamp = excluded.timestamp,
     source = excluded.source,
+    reason = excluded.reason,
     synced = excluded.synced,
     synced_at = excluded.synced_at;
 `;
@@ -291,16 +295,18 @@ const UPSERT_QUESTION_SQL = `
     anonymous_id,
     text,
     language,
+    reason,
     lesson_marker_id,
     timestamp,
     synced,
     synced_at
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     anonymous_id = excluded.anonymous_id,
     text = excluded.text,
     language = excluded.language,
+    reason = excluded.reason,
     lesson_marker_id = excluded.lesson_marker_id,
     timestamp = excluded.timestamp,
     synced = excluded.synced,
@@ -1019,6 +1025,8 @@ function normalizeRemotePulseEvent(row: UnknownRow): PulseSignalEvent | null {
     anonymousId,
     pulse,
     timestamp: toIsoString(timestamp),
+    reason: sanitizeText(readString(row, "reason"), { maxLength: 40 }) || undefined,
+    source: sanitizeText(readString(row, "source"), { maxLength: 40 }) || undefined,
   };
 }
 
@@ -1196,6 +1204,8 @@ function normalizeLocalPulseEventRow(row: LocalPulseEventRow): PulseSignalEvent 
     anonymousId: row.anonymous_id,
     pulse: normalizePulseValue(row.pulse) ?? "sort_of",
     timestamp: row.timestamp,
+    reason: row.reason ?? undefined,
+    source: row.source,
   };
 }
 
@@ -1215,7 +1225,8 @@ async function persistPulseEvents(events: PulseSignalEvent[], synced = true) {
       event.anonymousId,
       event.pulse,
       event.timestamp,
-      "remote",
+      event.source ?? "remote",
+      event.reason ?? null,
       synced ? 1 : 0,
       syncedAt
     );
@@ -1236,6 +1247,7 @@ async function listLocalPulseEvents(
         pulse,
         timestamp,
         source,
+        reason,
         synced,
         synced_at
       FROM local_pulse_events
@@ -1664,6 +1676,7 @@ async function persistQuestionsWithSyncState(
       sanitizedQuestion.anonymousId,
       sanitizedQuestion.text,
       sanitizedQuestion.language ?? null,
+      sanitizeText(sanitizedQuestion.reason, { maxLength: 40 }) || null,
       sanitizedQuestion.lessonMarkerId ?? null,
       sanitizedQuestion.timestamp,
       synced ? 1 : 0,
@@ -1916,6 +1929,7 @@ export async function recordLocalPulseEvent(
     event.pulse,
     event.timestamp,
     options?.source ?? "local_hotspot",
+    event.reason ?? null,
     0,
     null
   );
@@ -1968,6 +1982,7 @@ export async function recordLocalQuestion(
     anonymousId: sanitizeAnonymousId(question.anonymousId),
     text: sanitizeStudentQuestionText(question.text),
     language: sanitizeText(question.language, { maxLength: 24 }) || undefined,
+    reason: sanitizeText(question.reason, { maxLength: 40 }) || undefined,
   };
 
   await persistQuestionsWithSyncState([sanitizedQuestion], false);
@@ -2626,4 +2641,50 @@ export function subscribeToLiveSession(
   return () => {
     void supabase.removeChannel(channel);
   };
+}
+
+export type ReasonDistributionEntry = { reason: string; count: number };
+
+export async function fetchReasonDistribution(
+  sessionId: string
+): Promise<ReasonDistributionEntry[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ reason: string; count: number }>(
+    `SELECT reason, COUNT(*) AS count
+     FROM local_pulse_events
+     WHERE session_id = ? AND reason IS NOT NULL AND reason != ''
+     GROUP BY reason
+     ORDER BY count DESC`,
+    [sessionId]
+  );
+
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  if (!hasSupabaseConfig) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from(pulseEventsTable)
+    .select("reason")
+    .eq("session_id", sessionId)
+    .not("reason", "is", null);
+
+  if (error || !data) {
+    return [];
+  }
+
+  const counts = new Map<string, number>();
+  for (const row of data) {
+    const reason = String((row as Record<string, unknown>).reason ?? "");
+    if (reason) {
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
 }

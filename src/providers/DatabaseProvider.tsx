@@ -18,18 +18,30 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
     async function init() {
       try {
         const database = await getDatabase();
         if (mounted) {
+          if (retryTimeout) {
+            clearTimeout(retryTimeout);
+            retryTimeout = null;
+          }
           setDb(database);
           setIsReady(true);
         }
       } catch (error) {
         console.error("Failed to initialize database:", error);
         if (mounted) {
-          setIsReady(true); // Mark as ready even on error so app doesn't hang
+          setDb(null);
+          setIsReady(false);
+          if (retryTimeout) {
+            clearTimeout(retryTimeout);
+          }
+          retryTimeout = setTimeout(() => {
+            void init();
+          }, 1_000);
         }
       }
     }
@@ -38,6 +50,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
     };
   }, []);
 

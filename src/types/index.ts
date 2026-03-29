@@ -9,3 +9,4 @@ export * from "./sync";
 export * from "./teacher";
 export * from "./ai";
 export * from "./recentSession";
+export * from "./intelligence";

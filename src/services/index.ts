@@ -1,5 +1,13 @@
 export { aiProvider, StubAIProvider } from "./ai";
 export {
+  composeDemoLessonPlanSeed,
+  extractDemoMetadata,
+  normalizeYouTubeUrl,
+  prepareYouTubeDemoLobby,
+  startYouTubeDemoClassroom,
+  stripDemoDirective,
+} from "./demoFlow";
+export {
   isVoiceProviderConfigured,
   StubVoiceProvider,
   voiceProvider,
@@ -88,6 +96,7 @@ export {
   isValidDateKey,
   resolveWeeklyDateRange,
 } from "./weeklyInsights";
+export { buildIntelligenceDashboard } from "./intelligence";
 export {
   exportSyncDiagnostics,
   retryFailedSyncJobs,

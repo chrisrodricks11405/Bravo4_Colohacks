@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Clipboard,
@@ -16,14 +16,19 @@ import { StateScreen } from "../../src/components/app/StateScreen";
 import {
   AIReteachPanel,
   AIInsightStrip,
+  AnnouncementPanel,
   ConfusionSparkline,
+  EngagementPanel,
   InterventionActionPanel,
   InterventionHistoryPanel,
   MetricCard,
   MisconceptionClusterDrawer,
   PulseBar,
   QuickPollPanel,
+  ReactionStreamPanel,
+  ReasonDistributionPanel,
 } from "../../src/components/live";
+import type { ReasonCount } from "../../src/components/live";
 import { Badge, BottomSheet, Button, Card, StatusChip } from "../../src/components/ui";
 import { useLiveDashboard } from "../../src/hooks/useLiveDashboard";
 import { useLivePolls } from "../../src/hooks/useLivePolls";
@@ -31,8 +36,33 @@ import { useAudioPlayback } from "../../src/hooks/useAudioPlayback";
 import { Sentry } from "../../src/lib/monitoring";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useSessionHydration } from "../../src/providers";
-import { aiProvider, getPersistedSession, voiceProvider } from "../../src/services";
+import {
+  aiProvider,
+  getPersistedSession,
+  voiceProvider,
+} from "../../src/services";
+import { fetchReasonDistribution } from "../../src/services/liveSession";
 import { startAudioRecording, stopAudioRecording } from "../../src/services/audioSession";
+import {
+  createSessionAnnouncement,
+  fetchSessionEngagement,
+  listRecentReactions,
+  listSessionAnnouncements,
+  subscribeToAnnouncements,
+  subscribeToEngagement,
+} from "../../src/services/studentEngagement";
+import type {
+  AnnouncementChannelStatus,
+  EngagementChannelStatus,
+  SessionAnnouncementRecord,
+  SessionEngagementSnapshot,
+  StudentReactionRecord,
+} from "../../src/services/studentEngagement";
+import {
+  broadcastAnnouncement,
+  broadcastTeacherPrompt,
+  broadcastTeacherPromptClear,
+} from "../../src/services/studentLiveBroadcast";
 import { useNetworkStore, usePreferencesStore, useSessionStore } from "../../src/stores";
 import { useShallow } from "zustand/react/shallow";
 import type {
@@ -230,6 +260,56 @@ function getInsightModel(args: {
   };
 }
 
+function buildStudentPrompt(cluster: MisconceptionClusterSummary) {
+  const clusterTitle = cluster.title.trim();
+  return {
+    promptId: cluster.id,
+    title: "Teacher note",
+    body: `Your teacher is revisiting ${clusterTitle.toLowerCase()}. Listen for the next explanation.`,
+    issuedAt: new Date().toISOString(),
+  };
+}
+
+function toStudentAnnouncementPayload(announcement: SessionAnnouncementRecord) {
+  return {
+    announcementId: announcement.id,
+    title: announcement.title,
+    body: announcement.body,
+    type: announcement.type,
+    audioUrl: announcement.audioUrl,
+    issuedAt: announcement.issuedAt,
+  };
+}
+
+function isMissingOptionalPanelTable(error: unknown) {
+  const candidate = (error ?? {}) as {
+    code?: string;
+    message?: string;
+    details?: string | null;
+    hint?: string | null;
+  };
+  const code = (candidate.code ?? "").trim().toLowerCase();
+  const message = (candidate.message ?? "").trim().toLowerCase();
+  const details = (candidate.details ?? "").trim().toLowerCase();
+  const hint = (candidate.hint ?? "").trim().toLowerCase();
+
+  if (code === "pgrst205" || code === "42p01") {
+    return true;
+  }
+
+  return (
+    message.includes("student_reactions") ||
+    message.includes("student_heartbeats") ||
+    message.includes("session_announcements") ||
+    details.includes("student_reactions") ||
+    details.includes("student_heartbeats") ||
+    details.includes("session_announcements") ||
+    hint.includes("student_reactions") ||
+    hint.includes("student_heartbeats") ||
+    hint.includes("session_announcements")
+  );
+}
+
 function getRemoteStatusMeta(
   remoteState: "live" | "connecting" | "degraded" | "disabled",
   mode: SessionMeta["mode"]
@@ -237,9 +317,9 @@ function getRemoteStatusMeta(
   if (mode === "offline") {
     return {
       chipStatus: "offline" as const,
-      label: "Local hotspot",
+      label: "Offline mode",
       badgeVariant: "warning" as const,
-      badgeLabel: "Realtime off",
+      badgeLabel: "Local only",
     };
   }
 
@@ -247,28 +327,28 @@ function getRemoteStatusMeta(
     case "live":
       return {
         chipStatus: "available" as const,
-        label: "Realtime live",
+        label: "Connected",
         badgeVariant: "success" as const,
-        badgeLabel: "Supabase synced",
+        badgeLabel: "Live updates on",
       };
     case "connecting":
       return {
         chipStatus: "syncing" as const,
         label: "Connecting",
         badgeVariant: "info" as const,
-        badgeLabel: "Joining stream",
+        badgeLabel: "Connecting...",
       };
     case "disabled":
       return {
         chipStatus: "offline" as const,
         label: "Local only",
         badgeVariant: "neutral" as const,
-        badgeLabel: "Realtime off",
+        badgeLabel: "Updates off",
       };
     default:
       return {
         chipStatus: "error" as const,
-        label: "Realtime degraded",
+        label: "Reconnecting",
         badgeVariant: "warning" as const,
         badgeLabel: "Retrying",
       };
@@ -350,7 +430,6 @@ export default function LiveDashboardScreen() {
   const isClusterDrawerOpen = useSessionStore((state) => state.isClusterDrawerOpen);
   const setSession = useSessionStore((state) => state.setSession);
   const setClusterDrawerOpen = useSessionStore((state) => state.setClusterDrawerOpen);
-  const isConnected = useNetworkStore((state) => state.isConnected);
   const connectionQuality = useNetworkStore((state) => state.connectionQuality);
   const supabaseReachable = useNetworkStore((state) => state.supabaseReachable);
   const voiceServiceReachable = useNetworkStore((state) => state.voiceServiceReachable);
@@ -373,11 +452,30 @@ export default function LiveDashboardScreen() {
   const [isMarkerSheetOpen, setIsMarkerSheetOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [selectedRecoveryWindowSeconds, setSelectedRecoveryWindowSeconds] = useState(60);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementBody, setAnnouncementBody] = useState("");
+  const [announcementHistory, setAnnouncementHistory] = useState<
+    SessionAnnouncementRecord[]
+  >([]);
+  const [reactionStream, setReactionStream] = useState<StudentReactionRecord[]>([]);
+  const [engagementSnapshot, setEngagementSnapshot] =
+    useState<SessionEngagementSnapshot | null>(null);
+  const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
+  const [announcementChannelStatus, setAnnouncementChannelStatus] =
+    useState<AnnouncementChannelStatus>("disabled");
+  const [engagementChannelStatus, setEngagementChannelStatus] =
+    useState<EngagementChannelStatus>("disabled");
+  const [communityPanelsAvailable, setCommunityPanelsAvailable] = useState(true);
+  const lastPromptSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     const activeSessionId = getParam(sessionId);
 
-    if (persistedSession && (!activeSessionId || persistedSession.id === activeSessionId)) {
+    if (
+      persistedSession &&
+      (!activeSessionId || persistedSession.id === activeSessionId) &&
+      persistedSession.status !== "lobby"
+    ) {
       setResolvedSession(persistedSession);
       setIsLoading(false);
       return;
@@ -484,6 +582,7 @@ export default function LiveDashboardScreen() {
     stopPoll,
   } = useLivePolls(resolvedSession, realtimeEnabled);
 
+  const [reasonDistribution, setReasonDistribution] = useState<ReasonCount[]>([]);
   const [reteachPack, setReteachPack] = useState<ReteachPack | null>(null);
   const [isGeneratingPack, setIsGeneratingPack] = useState(false);
   const [isGeneratingAIPoll, setIsGeneratingAIPoll] = useState(false);
@@ -516,7 +615,7 @@ export default function LiveDashboardScreen() {
   ).length;
 
   const isBusy =
-    isHydrating || isLoading || isDashboardHydrating || isPollHydrating;
+    !resolvedSession && (isHydrating || isLoading || isDashboardHydrating || isPollHydrating);
 
   const totalJoined = currentPulse
     ? currentPulse.totalActive + currentPulse.disconnectedCount
@@ -542,7 +641,6 @@ export default function LiveDashboardScreen() {
   const remoteMeta = resolvedSession
     ? getRemoteStatusMeta(remoteState, resolvedSession.mode)
     : null;
-
   const isCompact = width < 1280;
   const isTight = width < 980;
   const insightModel = getInsightModel({
@@ -552,6 +650,15 @@ export default function LiveDashboardScreen() {
     confusionIndex,
     threshold: resolvedSession?.lostThreshold ?? 40,
   });
+  const canLoadCommunityPanels =
+    communityPanelsAvailable &&
+    Boolean(hasSupabaseConfig) &&
+    resolvedSession?.mode !== "offline";
+  const needsCommunityPolling =
+    Boolean(canLoadCommunityPanels) &&
+    (!realtimeEnabled ||
+      announcementChannelStatus !== "SUBSCRIBED" ||
+      engagementChannelStatus !== "SUBSCRIBED");
 
   const updateComposer = (
     nextValue:
@@ -598,6 +705,271 @@ export default function LiveDashboardScreen() {
     ],
     [currentPulse, resolvedSession?.participantCount]
   );
+
+  useEffect(() => {
+    if (!resolvedSession?.id) return;
+    let cancelled = false;
+    void fetchReasonDistribution(resolvedSession.id).then((result) => {
+      if (!cancelled) setReasonDistribution(result);
+    });
+    return () => { cancelled = true; };
+  }, [resolvedSession?.id, currentPulse?.lostCount]);
+
+  useEffect(() => {
+    if (!resolvedSession?.id || !canLoadCommunityPanels) {
+      setAnnouncementHistory([]);
+      setReactionStream([]);
+      setEngagementSnapshot(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.allSettled([
+      listSessionAnnouncements(resolvedSession.id),
+      listRecentReactions(resolvedSession.id),
+      fetchSessionEngagement(resolvedSession.id, resolvedSession.participantCount),
+    ])
+      .then(([announcementsResult, reactionsResult, engagementResult]) => {
+        if (cancelled) {
+          return;
+        }
+
+        const rejectedResults = [announcementsResult, reactionsResult, engagementResult].filter(
+          (result): result is PromiseRejectedResult => result.status === "rejected"
+        );
+
+        if (
+          rejectedResults.some((result) => isMissingOptionalPanelTable(result.reason))
+        ) {
+          setCommunityPanelsAvailable(false);
+          setAnnouncementHistory([]);
+          setReactionStream([]);
+          setEngagementSnapshot(null);
+          setAnnouncementChannelStatus("disabled");
+          setEngagementChannelStatus("disabled");
+          return;
+        }
+
+        rejectedResults.forEach((result) => {
+          console.error("Failed to load live student signals:", result.reason);
+        });
+
+        if (announcementsResult.status === "fulfilled") {
+          setAnnouncementHistory(announcementsResult.value);
+        }
+        if (reactionsResult.status === "fulfilled") {
+          setReactionStream(reactionsResult.value);
+        }
+        if (engagementResult.status === "fulfilled") {
+          setEngagementSnapshot(engagementResult.value);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canLoadCommunityPanels, resolvedSession?.id, resolvedSession?.participantCount]);
+
+  useEffect(() => {
+    if (!resolvedSession?.id || !realtimeEnabled || !canLoadCommunityPanels) {
+      setAnnouncementChannelStatus("disabled");
+      setEngagementChannelStatus("disabled");
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshAnnouncements = async () => {
+      try {
+        const nextAnnouncements = await listSessionAnnouncements(resolvedSession.id);
+        if (!cancelled) {
+          setAnnouncementHistory(nextAnnouncements);
+        }
+      } catch (loadError) {
+        if (isMissingOptionalPanelTable(loadError)) {
+          if (!cancelled) {
+            setCommunityPanelsAvailable(false);
+            setAnnouncementHistory([]);
+            setAnnouncementChannelStatus("disabled");
+          }
+          return;
+        }
+        console.error("Failed to refresh announcements:", loadError);
+      }
+    };
+
+    const refreshReactions = async () => {
+      try {
+        const nextReactions = await listRecentReactions(resolvedSession.id);
+        if (!cancelled) {
+          setReactionStream(nextReactions);
+        }
+      } catch (loadError) {
+        if (isMissingOptionalPanelTable(loadError)) {
+          if (!cancelled) {
+            setCommunityPanelsAvailable(false);
+            setReactionStream([]);
+            setEngagementChannelStatus("disabled");
+          }
+          return;
+        }
+        console.error("Failed to refresh reactions:", loadError);
+      }
+    };
+
+    const refreshEngagement = async () => {
+      try {
+        const nextSnapshot = await fetchSessionEngagement(
+          resolvedSession.id,
+          resolvedSession.participantCount
+        );
+        if (!cancelled) {
+          setEngagementSnapshot(nextSnapshot);
+        }
+      } catch (loadError) {
+        if (isMissingOptionalPanelTable(loadError)) {
+          if (!cancelled) {
+            setCommunityPanelsAvailable(false);
+            setEngagementSnapshot(null);
+            setEngagementChannelStatus("disabled");
+          }
+          return;
+        }
+        console.error("Failed to refresh engagement:", loadError);
+      }
+    };
+
+    const unsubscribeAnnouncements = subscribeToAnnouncements(resolvedSession.id, {
+      onAnnouncementEvent: () => {
+        void refreshAnnouncements();
+      },
+      onStatusChange: setAnnouncementChannelStatus,
+    });
+
+    const unsubscribeEngagement = subscribeToEngagement(resolvedSession.id, {
+      onReactionEvent: () => {
+        void refreshReactions();
+        void refreshEngagement();
+      },
+      onHeartbeatEvent: () => {
+        void refreshEngagement();
+      },
+      onStatusChange: setEngagementChannelStatus,
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribeAnnouncements();
+      unsubscribeEngagement();
+    };
+  }, [
+    canLoadCommunityPanels,
+    resolvedSession?.id,
+    resolvedSession?.participantCount,
+    realtimeEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!resolvedSession?.id || !needsCommunityPolling) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const interval = setInterval(() => {
+      void Promise.allSettled([
+        listSessionAnnouncements(resolvedSession.id),
+        listRecentReactions(resolvedSession.id),
+        fetchSessionEngagement(resolvedSession.id, resolvedSession.participantCount),
+      ])
+        .then(([announcementsResult, reactionsResult, engagementResult]) => {
+          if (cancelled) {
+            return;
+          }
+
+          const rejectedResults = [announcementsResult, reactionsResult, engagementResult].filter(
+            (result): result is PromiseRejectedResult => result.status === "rejected"
+          );
+
+          if (
+            rejectedResults.some((result) => isMissingOptionalPanelTable(result.reason))
+          ) {
+            setCommunityPanelsAvailable(false);
+            setAnnouncementHistory([]);
+            setReactionStream([]);
+            setEngagementSnapshot(null);
+            setAnnouncementChannelStatus("disabled");
+            setEngagementChannelStatus("disabled");
+            return;
+          }
+
+          rejectedResults.forEach((result) => {
+            console.error("Fallback refresh failed:", result.reason);
+          });
+
+          if (announcementsResult.status === "fulfilled") {
+            setAnnouncementHistory(announcementsResult.value);
+          }
+          if (reactionsResult.status === "fulfilled") {
+            setReactionStream(reactionsResult.value);
+          }
+          if (engagementResult.status === "fulfilled") {
+            setEngagementSnapshot(engagementResult.value);
+          }
+        });
+    }, 7_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [
+    needsCommunityPolling,
+    resolvedSession?.id,
+    resolvedSession?.participantCount,
+  ]);
+
+  useEffect(() => {
+    if (!resolvedSession?.id || !realtimeEnabled || resolvedSession.status !== "active") {
+      lastPromptSignatureRef.current = null;
+      return;
+    }
+
+    const nextPromptSignature = focusCluster
+      ? `${focusCluster.id}:${focusCluster.title}:${focusCluster.affectedCount}:${focusCluster.summary}`
+      : "clear";
+
+    if (lastPromptSignatureRef.current === nextPromptSignature) {
+      return;
+    }
+
+    lastPromptSignatureRef.current = nextPromptSignature;
+
+    void (async () => {
+      try {
+        if (focusCluster) {
+          await broadcastTeacherPrompt(
+            resolvedSession.id,
+            buildStudentPrompt(focusCluster)
+          );
+          return;
+        }
+
+        await broadcastTeacherPromptClear(resolvedSession.id);
+      } catch (broadcastError) {
+        console.error("Failed to broadcast teacher prompt:", broadcastError);
+      }
+    })();
+  }, [
+    focusCluster?.affectedCount,
+    focusCluster?.id,
+    focusCluster?.summary,
+    focusCluster?.title,
+    realtimeEnabled,
+    resolvedSession?.id,
+    resolvedSession?.status,
+  ]);
 
   useEffect(() => {
     setReteachPack(null);
@@ -725,7 +1097,7 @@ export default function LiveDashboardScreen() {
         Alert.alert(
           "AI unavailable",
           preferences.aiProviderEnabled
-            ? "Reconnect to Supabase Realtime to generate reteach packs."
+            ? "Check your internet connection to generate reteach packs."
             : "Turn AI back on in Settings to generate reteach packs."
         );
         return;
@@ -794,7 +1166,7 @@ export default function LiveDashboardScreen() {
         Alert.alert(
           "AI unavailable",
           preferences.aiProviderEnabled
-            ? "Reconnect to Supabase Realtime to generate a poll from the cluster. Manual poll creation still works."
+            ? "Check your internet connection to generate AI polls. You can still create polls manually."
             : "Turn AI back on in Settings to generate cluster-based poll drafts."
         );
         return;
@@ -1070,6 +1442,57 @@ export default function LiveDashboardScreen() {
     })();
   };
 
+  const handleSendAnnouncement = () => {
+    void (async () => {
+      if (!resolvedSession?.id) {
+        return;
+      }
+
+      try {
+        setIsSendingAnnouncement(true);
+
+        const savedAnnouncement = await createSessionAnnouncement({
+          sessionId: resolvedSession.id,
+          title: announcementTitle,
+          body: announcementBody,
+        });
+
+        if (!savedAnnouncement) {
+          throw new Error("Announcement could not be saved.");
+        }
+
+        setAnnouncementHistory((currentValue) =>
+          [
+            savedAnnouncement,
+            ...currentValue.filter((item) => item.id !== savedAnnouncement.id),
+          ].sort((left, right) => right.issuedAt.localeCompare(left.issuedAt))
+        );
+        setAnnouncementTitle("");
+        setAnnouncementBody("");
+
+        try {
+          await broadcastAnnouncement(
+            resolvedSession.id,
+            toStudentAnnouncementPayload(savedAnnouncement)
+          );
+        } catch (broadcastError) {
+          console.error("Announcement saved but broadcast failed:", broadcastError);
+          Alert.alert(
+            "Announcement saved",
+            "The history updated, but instant student delivery needs attention."
+          );
+        }
+      } catch (actionError) {
+        Alert.alert(
+          "Could not send announcement",
+          actionError instanceof Error ? actionError.message : "Try again in a moment."
+        );
+      } finally {
+        setIsSendingAnnouncement(false);
+      }
+    })();
+  };
+
   const handleEndSession = () => {
     Alert.alert(
       "End session?",
@@ -1179,14 +1602,6 @@ export default function LiveDashboardScreen() {
           </Card>
         ) : null}
 
-        {!hasSupabaseConfig ? (
-          <Card variant="default" padding="lg" style={styles.alertCard}>
-            <Text style={styles.alertTitle}>Supabase is not configured</Text>
-            <Text style={styles.alertText}>
-              The dashboard is ready, but live pulse transport will stay in local-only mode until the project has valid Supabase keys and table names.
-            </Text>
-          </Card>
-        ) : null}
 
         <AIInsightStrip
           title={insightModel.title}
@@ -1219,6 +1634,11 @@ export default function LiveDashboardScreen() {
         <View style={[styles.primaryGrid, isCompact && styles.primaryGridCompact]}>
           <Card variant="elevated" padding="lg" style={styles.pulseCard}>
             <PulseBar snapshot={currentPulse} />
+            {reasonDistribution.length > 0 && (
+              <View style={{ marginTop: spacing.md }}>
+                <ReasonDistributionPanel distribution={reasonDistribution} />
+              </View>
+            )}
           </Card>
 
           <Card variant="default" padding="lg" style={styles.summaryCard}>
@@ -1414,6 +1834,25 @@ export default function LiveDashboardScreen() {
             />
           </View>
         </Card>
+
+        <View style={[styles.communityGrid, isCompact && styles.communityGridCompact]}>
+          <View style={styles.communityPrimary}>
+            <AnnouncementPanel
+              title={announcementTitle}
+              body={announcementBody}
+              isSending={isSendingAnnouncement}
+              history={announcementHistory}
+              onChangeTitle={setAnnouncementTitle}
+              onChangeBody={setAnnouncementBody}
+              onSend={handleSendAnnouncement}
+            />
+          </View>
+
+          <View style={styles.communityRail}>
+            <ReactionStreamPanel reactions={reactionStream} />
+            <EngagementPanel snapshot={engagementSnapshot} />
+          </View>
+        </View>
 
         <View style={[styles.interventionGrid, isCompact && styles.interventionGridCompact]}>
           <InterventionActionPanel
@@ -1834,6 +2273,25 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     minWidth: 210,
+  },
+
+  // Community grid
+  communityGrid: {
+    flexDirection: "row",
+    gap: spacing.xl,
+    alignItems: "flex-start",
+  },
+  communityGridCompact: {
+    flexDirection: "column",
+  },
+  communityPrimary: {
+    flex: 1.2,
+    minWidth: 360,
+  },
+  communityRail: {
+    flex: 0.9,
+    minWidth: 320,
+    gap: spacing.xl,
   },
 
   // Intervention grid

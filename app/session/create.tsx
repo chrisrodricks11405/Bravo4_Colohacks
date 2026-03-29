@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -19,7 +20,9 @@ import { Button, Card } from "../../src/components/ui";
 import { Sentry } from "../../src/lib/monitoring";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useAuth, useSessionHydration } from "../../src/providers";
-import { createSession } from "../../src/services";
+import {
+  createSession,
+} from "../../src/services";
 import { useNetworkStore, usePreferencesStore, useSessionStore } from "../../src/stores";
 import { useShallow } from "zustand/react/shallow";
 import { borderRadius, colors, shadows, spacing, textStyles } from "../../src/theme";
@@ -144,11 +147,14 @@ export default function CreateSessionScreen() {
     setIsSubmitting(true);
 
     try {
-      const session = await createSession(values, {
-        teacherId: user.id,
-        attemptRemoteSync: willSyncImmediately,
-        queueOnFailure: true,
-      });
+      const session = await createSession(
+        values,
+        {
+          teacherId: user.id,
+          attemptRemoteSync: willSyncImmediately,
+          queueOnFailure: true,
+        }
+      );
 
       setSession(session);
       setNetworkMode(session.mode === "offline" ? "local_hotspot" : "online");
@@ -157,6 +163,12 @@ export default function CreateSessionScreen() {
         params: { sessionId: session.id },
       });
     } catch (error) {
+      Alert.alert(
+        "Could not create session",
+        error instanceof Error
+          ? error.message
+          : "We could not create the session right now."
+      );
       setSubmitError(
         error instanceof Error
           ? error.message
@@ -184,7 +196,7 @@ export default function CreateSessionScreen() {
             <Card variant="elevated" padding="xl" style={styles.formCard}>
               {/* Header row */}
               <View style={styles.formHeader}>
-                <Text style={styles.formTitle}>Initialize Session</Text>
+                <Text style={styles.formTitle}>New Session</Text>
                 <Controller
                   control={control}
                   name="mode"
@@ -217,7 +229,12 @@ export default function CreateSessionScreen() {
                   </View>
                   <Button
                     title={activeSession.status === "active" ? "Open Live" : "Resume Lobby"}
-                    onPress={() => router.replace(currentSessionRoute)}
+                    onPress={() =>
+                      router.replace({
+                        pathname: currentSessionRoute,
+                        params: { sessionId: activeSession.id },
+                      })
+                    }
                     variant="secondary"
                     size="sm"
                   />
@@ -236,7 +253,7 @@ export default function CreateSessionScreen() {
                           value={value}
                           onChangeText={onChange}
                           onBlur={onBlur}
-                          placeholder="e.g. Theoretical Physics"
+                          placeholder="e.g. Mathematics"
                           placeholderTextColor={colors.text.tertiary}
                           style={styles.input}
                         />
@@ -254,7 +271,7 @@ export default function CreateSessionScreen() {
                           value={value}
                           onChangeText={onChange}
                           onBlur={onBlur}
-                          placeholder="Senior Year - Section A"
+                          placeholder="e.g. Grade 8 - Section A"
                           placeholderTextColor={colors.text.tertiary}
                           style={styles.input}
                         />
@@ -274,7 +291,7 @@ export default function CreateSessionScreen() {
                       value={value}
                       onChangeText={onChange}
                       onBlur={onBlur}
-                      placeholder="Quantum Entanglement and Observation"
+                      placeholder="e.g. Fractions and Decimals"
                       placeholderTextColor={colors.text.tertiary}
                       style={styles.input}
                     />
@@ -308,7 +325,7 @@ export default function CreateSessionScreen() {
               </InputField>
 
               {/* Lost Threshold */}
-              <InputField label="LOST THRESHOLD" hint="AI alert sensitivity when students lose focus or show confusion.">
+              <InputField label="ALERT SENSITIVITY" hint="How sensitive should alerts be when students seem confused?">
                 <Controller
                   control={control}
                   name="lostThreshold"
@@ -342,9 +359,8 @@ export default function CreateSessionScreen() {
 
               {/* Lesson Plan Seed */}
               <InputField
-                label="LESSON PLAN SEED"
+                label="LESSON NOTES (OPTIONAL)"
                 error={errors.lessonPlanSeed?.message}
-                hint="Optional"
               >
                 <Controller
                   control={control}
@@ -354,7 +370,7 @@ export default function CreateSessionScreen() {
                       value={value}
                       onChangeText={onChange}
                       onBlur={onBlur}
-                      placeholder="Paste notes, keywords, or a summary for the AI to prioritize during live analysis..."
+                      placeholder="Paste your lesson notes or key points for AI to focus on..."
                       placeholderTextColor={colors.text.tertiary}
                       multiline
                       textAlignVertical="top"
@@ -376,7 +392,7 @@ export default function CreateSessionScreen() {
                   <Text style={styles.saveDraftText}>💾  Save as Draft</Text>
                 </TouchableOpacity>
                 <Button
-                  title="Launch Session  🚀"
+                  title="Launch Session"
                   onPress={onSubmit}
                   loading={isSubmitting}
                   size="lg"
@@ -385,19 +401,6 @@ export default function CreateSessionScreen() {
               </View>
             </Card>
 
-            {/* AI Copilot card */}
-            <Card variant="default" padding="lg" style={styles.copilotCard}>
-              <View style={styles.copilotHeader}>
-                <View style={styles.copilotDot} />
-                <View>
-                  <Text style={styles.copilotLabel}>AI COPILOT</Text>
-                  <Text style={styles.copilotTitle}>System Ready</Text>
-                </View>
-              </View>
-              <Text style={styles.copilotText}>
-                "I've optimized the monitoring threshold based on your previous sessions. Ready to launch whenever you are."
-              </Text>
-            </Card>
           </View>
 
           {isHydrating ? (
@@ -630,41 +633,6 @@ const styles = StyleSheet.create({
     color: "#991B1B",
   },
 
-  // Copilot card
-  copilotCard: {
-    borderRadius: borderRadius.xl,
-    ...shadows.md,
-  },
-  copilotHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  copilotDot: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.status.success,
-    opacity: 0.8,
-  },
-  copilotLabel: {
-    ...textStyles.caption,
-    color: colors.text.tertiary,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-  },
-  copilotTitle: {
-    ...textStyles.bodyMedium,
-    color: colors.text.primary,
-    fontWeight: "700",
-  },
-  copilotText: {
-    ...textStyles.bodySmall,
-    color: colors.text.secondary,
-    fontStyle: "italic",
-    lineHeight: 20,
-  },
 
   footerText: {
     ...textStyles.bodySmall,

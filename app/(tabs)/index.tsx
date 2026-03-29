@@ -13,9 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Badge, Button, Card, StatusChip } from "../../src/components/ui";
 import { useRecentSessions } from "../../src/hooks/useRecentSessions";
 import { Sentry } from "../../src/lib/monitoring";
-import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { useAuth } from "../../src/providers";
-import { voiceProvider } from "../../src/services";
 import { useNetworkStore, usePreferencesStore } from "../../src/stores";
 import { useShallow } from "zustand/react/shallow";
 import type { RecentSession } from "../../src/types";
@@ -98,17 +96,11 @@ function RecentSessionRow({ session, onPress }: { session: RecentSession; onPres
       </View>
       <View style={styles.sessionRowRight}>
         <View style={styles.sessionConfusionBlock}>
-          <Text style={styles.sessionConfusionLabel}>CONFUSION INDEX</Text>
+          <Text style={styles.sessionConfusionLabel}>UNDERSTANDING</Text>
           <ConfusionBar value={session.confusionIndexAvg ?? null} />
         </View>
         <View style={styles.sessionBadges}>
-          <Badge label={session.status === "active" ? "Active Now" : "Ended"} variant={statusVariant} size="sm" />
-          <Badge
-            label={session.synced ? "Synced" : "Local"}
-            variant={session.synced ? "success" : "warning"}
-            size="sm"
-            dot
-          />
+          <Badge label={session.status === "active" ? "Live" : "Ended"} variant={statusVariant} size="sm" />
         </View>
       </View>
     </TouchableOpacity>
@@ -118,25 +110,19 @@ function RecentSessionRow({ session, onPress }: { session: RecentSession; onPres
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const voiceCapabilities = voiceProvider.getCapabilities();
   const preferences = usePreferencesStore(useShallow((state) => ({
     defaultLanguage: state.defaultLanguage,
     defaultLostThreshold: state.defaultLostThreshold,
     defaultSubject: state.defaultSubject,
     defaultGradeClass: state.defaultGradeClass,
-    aiProviderEnabled: state.aiProviderEnabled,
-    voiceEnabled: state.voiceEnabled,
   })));
   const {
     isConnected,
-    supabaseReachable,
-    voiceServiceReachable,
     pendingSyncCount,
     failedSyncCount,
     lastSyncAt,
     mode,
     syncInProgress,
-    syncProgress,
   } = useNetworkStore();
   const { sessions, isLoading, isRefreshing, isSyncing, lastSyncedAt, syncError, refresh } =
     useRecentSessions({ limit: 8, autoSync: true });
@@ -149,21 +135,6 @@ export default function HomeScreen() {
         : pendingSyncCount > 0
           ? { status: "offline" as const, label: `${pendingSyncCount} pending` }
           : { status: "online" as const, label: "Up to date" };
-
-  const aiBadge =
-    preferences.aiProviderEnabled && isConnected
-      ? { label: "AI Ready", variant: "success" as const }
-      : preferences.aiProviderEnabled
-        ? { label: "AI Offline", variant: "warning" as const }
-        : { label: "AI Off", variant: "neutral" as const };
-
-  const voiceBadge = preferences.voiceEnabled
-    ? voiceCapabilities.available && voiceServiceReachable
-      ? { label: "Voice On", variant: "success" as const }
-      : voiceCapabilities.available
-        ? { label: "Voice Offline", variant: "warning" as const }
-        : { label: "Voice N/A", variant: "neutral" as const }
-    : { label: "Voice Off", variant: "neutral" as const };
 
   const latestSession = sessions[0] ?? null;
 
@@ -183,15 +154,15 @@ export default function HomeScreen() {
       >
         {/* Top Header Bar */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>ClassPulse AI</Text>
-          <View style={styles.headerRight}>
-            <StatusChip status={isConnected ? "online" : "offline"} />
-            <StatusChip status={syncStatus.status} label={syncStatus.label} />
-            <Badge label={aiBadge.label} variant={aiBadge.variant} size="sm" dot />
-            <Badge label={voiceBadge.label} variant={voiceBadge.variant} size="sm" dot />
+          <View>
+            <Text style={styles.headerTitle}>ClassPulse</Text>
             {user?.email ? (
               <Text style={styles.headerEmail}>{user.email}</Text>
             ) : null}
+          </View>
+          <View style={styles.headerRight}>
+            <StatusChip status={isConnected ? "online" : "offline"} />
+            <StatusChip status={syncStatus.status} label={syncStatus.label} />
           </View>
         </View>
 
@@ -202,18 +173,22 @@ export default function HomeScreen() {
             {/* Hero Session Launcher */}
             <Card variant="dark" padding="lg" style={styles.heroCard}>
               <Text style={styles.heroTitle}>Ready to teach?</Text>
+              <Text style={styles.heroSubtitle}>
+                Start a live session and track student understanding in real time.
+              </Text>
               <View style={styles.heroChips}>
-                <View style={styles.heroChip}>
-                  <Text style={styles.heroChipText}>{preferences.defaultSubject ?? "Subject"}</Text>
-                </View>
-                <View style={styles.heroChip}>
-                  <Text style={styles.heroChipText}>{preferences.defaultGradeClass ?? "Class"}</Text>
-                </View>
+                {preferences.defaultSubject ? (
+                  <View style={styles.heroChip}>
+                    <Text style={styles.heroChipText}>{preferences.defaultSubject}</Text>
+                  </View>
+                ) : null}
+                {preferences.defaultGradeClass ? (
+                  <View style={styles.heroChip}>
+                    <Text style={styles.heroChipText}>{preferences.defaultGradeClass}</Text>
+                  </View>
+                ) : null}
                 <View style={styles.heroChip}>
                   <Text style={styles.heroChipText}>{preferences.defaultLanguage}</Text>
-                </View>
-                <View style={styles.heroChip}>
-                  <Text style={styles.heroChipText}>{preferences.defaultLostThreshold}% threshold</Text>
                 </View>
               </View>
               <View style={styles.heroButtons}>
@@ -223,7 +198,6 @@ export default function HomeScreen() {
                   size="lg"
                   style={styles.heroStartButton}
                   textStyle={styles.heroStartText}
-                  icon={<Text style={{ color: colors.primary[700], fontSize: 16 }}>▶</Text>}
                 />
                 <Button
                   title="Offline Mode"
@@ -239,12 +213,12 @@ export default function HomeScreen() {
             {/* Live Feed / Recent Insights */}
             {latestSession ? (
               <Card variant="default" padding="lg" style={styles.liveFeedCard}>
-                <Text style={styles.sectionLabel}>Live Feed / Recent Insights</Text>
+                <Text style={styles.sectionLabel}>Latest Session</Text>
                 <View style={styles.liveFeedContent}>
                   <View style={styles.liveFeedHeader}>
                     <Text style={styles.liveFeedTitle}>{latestSession.topic || latestSession.subject}</Text>
                     <Badge
-                      label={latestSession.status === "active" ? "Active" : "Ended"}
+                      label={latestSession.status === "active" ? "Live" : "Ended"}
                       variant={latestSession.status === "active" ? "success" : "neutral"}
                       size="sm"
                       dot
@@ -255,25 +229,20 @@ export default function HomeScreen() {
                   </Text>
                   <View style={styles.liveFeedMetrics}>
                     <View style={styles.liveFeedMetric}>
-                      <Text style={styles.liveFeedMetricLabel}>CONFUSION INDEX</Text>
+                      <Text style={styles.liveFeedMetricLabel}>UNDERSTANDING</Text>
                       <ConfusionBar value={latestSession.confusionIndexAvg ?? null} />
                     </View>
                   </View>
                   <Button
-                    title="View Summary"
+                    title={latestSession.status === "active" ? "Open Session" : "View Summary"}
                     variant="primary"
                     size="sm"
                     onPress={() =>
-                      router.push({ pathname: "/session/summary", params: { sessionId: latestSession.id } })
+                      latestSession.status === "active"
+                        ? router.push({ pathname: "/session/live", params: { sessionId: latestSession.id } })
+                        : router.push({ pathname: "/session/summary", params: { sessionId: latestSession.id } })
                     }
                     style={styles.liveFeedButton}
-                  />
-                  <Badge
-                    label={latestSession.synced ? "Synced" : "Syncing..."}
-                    variant={latestSession.synced ? "success" : "info"}
-                    size="sm"
-                    dot
-                    style={styles.liveFeedSyncBadge}
                   />
                 </View>
               </Card>
@@ -320,36 +289,17 @@ export default function HomeScreen() {
             {/* Quick Access */}
             <Text style={styles.sectionTitle}>Quick Access</Text>
             <View style={styles.quickAccessGrid}>
-              <QuickAccessCard title="Past Summaries" onPress={() => router.push("/(tabs)/summaries")} />
+              <QuickAccessCard title="AI Insights" onPress={() => router.push("/(tabs)/intelligence")} />
+              <QuickAccessCard title="Session History" onPress={() => router.push("/(tabs)/summaries")} />
               <QuickAccessCard title="Settings" onPress={() => router.push("/(tabs)/settings")} />
             </View>
 
-            {/* Weekly Patterns Preview */}
-            <Card variant="default" padding="lg" style={styles.weeklyCard}>
-              <Text style={styles.cardTitle}>Weekly Patterns</Text>
-              <View style={styles.weeklyBars}>
-                {["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => (
-                  <View key={day} style={styles.weeklyBarCol}>
-                    <View style={styles.weeklyBarTrack}>
-                      <View
-                        style={[
-                          styles.weeklyBarFill,
-                          { height: `${Math.random() * 60 + 20}%` },
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.weeklyBarLabel}>{day}</Text>
-                  </View>
-                ))}
-              </View>
-            </Card>
-
-            {/* System Health */}
+            {/* Connection Status */}
             <Card variant="default" padding="lg" style={styles.healthCard}>
               <View style={styles.healthHeader}>
-                <Text style={styles.cardTitle}>System Health</Text>
+                <Text style={styles.cardTitle}>Status</Text>
                 <Badge
-                  label={failedSyncCount > 0 ? "Needs Attention" : "Healthy"}
+                  label={failedSyncCount > 0 ? "Needs Attention" : "All Good"}
                   variant={failedSyncCount > 0 ? "warning" : "success"}
                   size="sm"
                 />
@@ -357,42 +307,37 @@ export default function HomeScreen() {
 
               <View style={styles.healthRows}>
                 <View style={styles.healthRow}>
-                  <Text style={styles.healthLabel}>Network</Text>
-                  <Text style={styles.healthValue}>
-                    {mode === "local_hotspot" ? "Edge Adaptive" : mode === "offline" ? "Offline" : "Online"}
-                  </Text>
-                </View>
-                <View style={styles.healthRow}>
-                  <Text style={styles.healthLabel}>Supabase</Text>
+                  <Text style={styles.healthLabel}>Connection</Text>
                   <View style={styles.healthValueRow}>
                     <View
                       style={[
                         styles.healthDot,
                         {
-                          backgroundColor:
-                            supabaseReachable && hasSupabaseConfig
-                              ? colors.status.success
-                              : colors.status.error,
+                          backgroundColor: isConnected
+                            ? colors.status.success
+                            : colors.status.error,
                         },
                       ]}
                     />
                     <Text style={styles.healthValue}>
-                      {supabaseReachable && hasSupabaseConfig ? "Connected" : "Unreachable"}
+                      {isConnected ? "Online" : "Offline"}
                     </Text>
                   </View>
                 </View>
                 <View style={styles.healthRow}>
-                  <Text style={styles.healthLabel}>Pending Jobs</Text>
-                  <Text style={styles.healthValue}>{pendingSyncCount} Tasks</Text>
+                  <Text style={styles.healthLabel}>Pending Uploads</Text>
+                  <Text style={styles.healthValue}>
+                    {pendingSyncCount > 0 ? `${pendingSyncCount} remaining` : "All synced"}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.healthFooter}>
-                <Text style={styles.healthFooterLabel}>LAST SYNC</Text>
+                <Text style={styles.healthFooterLabel}>LAST SYNCED</Text>
                 <Text style={styles.healthFooterValue}>
                   {lastSyncAt || lastSyncedAt
-                    ? `Just now · ${formatSyncTime(lastSyncAt ?? lastSyncedAt)}`
-                    : "Not synced yet"}
+                    ? formatSyncTime(lastSyncAt ?? lastSyncedAt)
+                    : "Not yet"}
                 </Text>
               </View>
             </Card>
@@ -495,6 +440,11 @@ const styles = StyleSheet.create({
   heroOfflineText: {
     color: colors.text.inverse,
   },
+  heroSubtitle: {
+    ...textStyles.bodyMedium,
+    color: "rgba(255, 255, 255, 0.7)",
+    marginBottom: spacing.base,
+  },
 
   // Live Feed
   liveFeedCard: {
@@ -537,9 +487,6 @@ const styles = StyleSheet.create({
   liveFeedButton: {
     alignSelf: "flex-start",
     marginTop: spacing.sm,
-  },
-  liveFeedSyncBadge: {
-    alignSelf: "flex-start",
   },
 
   // Recent Sessions
@@ -632,10 +579,12 @@ const styles = StyleSheet.create({
   // Quick Access
   quickAccessGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
   },
   quickAccessCard: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 180,
     backgroundColor: colors.surface.card,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
@@ -654,46 +603,12 @@ const styles = StyleSheet.create({
     color: colors.primary[600],
   },
 
-  // Weekly patterns
-  weeklyCard: {
-    borderRadius: borderRadius["2xl"],
-  },
   cardTitle: {
     ...textStyles.headingSmall,
     color: colors.text.primary,
     marginBottom: spacing.base,
   },
-  weeklyBars: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    height: 100,
-    gap: spacing.sm,
-  },
-  weeklyBarCol: {
-    flex: 1,
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  weeklyBarTrack: {
-    flex: 1,
-    width: "100%",
-    backgroundColor: colors.surface.backgroundAlt,
-    borderRadius: borderRadius.sm,
-    justifyContent: "flex-end",
-    overflow: "hidden",
-  },
-  weeklyBarFill: {
-    width: "100%",
-    backgroundColor: colors.pulse.gotIt,
-    borderRadius: borderRadius.sm,
-    opacity: 0.7,
-  },
-  weeklyBarLabel: {
-    ...textStyles.caption,
-    color: colors.text.tertiary,
-  },
-
-  // Health card
+  // Status card
   healthCard: {
     borderRadius: borderRadius["2xl"],
   },

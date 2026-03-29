@@ -150,6 +150,15 @@ const corsHeaders = {
 const openAIKey = Deno.env.get("OPENAI_API_KEY");
 const transcriptionModel = Deno.env.get("OPENAI_TRANSCRIBE_MODEL") ?? "gpt-4o-transcribe";
 const speechModel = Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts";
+const deepgramApiKey = Deno.env.get("DEEPGRAM_API_KEY");
+const deepgramApiBaseUrl = Deno.env.get("DEEPGRAM_API_BASE_URL") ?? "https://api.deepgram.com/v1";
+const deepgramSttModel = Deno.env.get("DEEPGRAM_STT_MODEL") ?? "nova-3";
+const runwayApiSecret = Deno.env.get("RUNWAYML_API_SECRET");
+const runwayApiVersion = Deno.env.get("RUNWAYML_API_VERSION") ?? "2024-11-06";
+const runwayApiBaseUrl = Deno.env.get("RUNWAYML_API_BASE_URL") ?? "https://api.dev.runwayml.com/v1";
+const runwaySpeechModel = Deno.env.get("RUNWAYML_TTS_MODEL") ?? "eleven_multilingual_v2";
+const runwayDefaultPresetVoice =
+  Deno.env.get("RUNWAYML_TTS_PRESET_DEFAULT") ?? "Leslie";
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -423,14 +432,290 @@ async function parseOpenAIError(response: Response) {
   }
 }
 
+async function parseRunwayError(response: Response) {
+  const fallback = `${response.status} ${response.statusText}`.trim();
+
+  try {
+    const data = await response.json();
+    const message =
+      data &&
+      typeof data === "object" &&
+      "error" in data &&
+      data.error &&
+      typeof data.error === "object" &&
+      "message" in data.error &&
+      typeof data.error.message === "string"
+        ? data.error.message
+        : null;
+
+    return message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function parseDeepgramError(response: Response) {
+  const fallback = `${response.status} ${response.statusText}`.trim();
+
+  try {
+    const data = await response.json();
+    const message =
+      data &&
+      typeof data === "object" &&
+      (("err_msg" in data && typeof data.err_msg === "string" && data.err_msg) ||
+        ("error" in data && typeof data.error === "string" && data.error) ||
+        ("message" in data && typeof data.message === "string" && data.message));
+
+    return typeof message === "string" && message.length > 0 ? message : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function resolveDeepgramLanguage(locale?: string) {
+  const normalized = locale?.trim().toLowerCase() ?? "";
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("hi") || normalized.startsWith("en")) {
+    return "multi";
+  }
+
+  if (normalized.startsWith("mr")) {
+    return "mr";
+  }
+
+  if (normalized.startsWith("kn")) {
+    return "kn";
+  }
+
+  if (normalized.startsWith("es")) {
+    return "es";
+  }
+
+  return normalized;
+}
+
+async function transcribeWithDeepgram(args: {
+  audioBase64: string;
+  mimeType?: string;
+  locale?: string;
+}) {
+  if (!deepgramApiKey) {
+    throw new Error("Voice transcription is unavailable because DEEPGRAM_API_KEY is missing.");
+  }
+
+  const audioBytes = decodeBase64(args.audioBase64);
+  const params = new URLSearchParams({
+    model: deepgramSttModel,
+    punctuate: "true",
+    smart_format: "true",
+  });
+  const language = resolveDeepgramLanguage(args.locale);
+
+  if (language) {
+    params.set("language", language);
+  } else {
+    params.set("detect_language", "true");
+  }
+
+  const response = await fetch(`${deepgramApiBaseUrl}/listen?${params.toString()}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${deepgramApiKey}`,
+      "Content-Type": args.mimeType || "audio/m4a",
+    },
+    body: audioBytes,
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseDeepgramError(response));
+  }
+
+  const data = await response.json();
+  const transcript =
+    data &&
+    typeof data === "object" &&
+    "results" in data &&
+    data.results &&
+    typeof data.results === "object" &&
+    "channels" in data.results &&
+    Array.isArray(data.results.channels) &&
+    data.results.channels[0] &&
+    typeof data.results.channels[0] === "object" &&
+    "alternatives" in data.results.channels[0] &&
+    Array.isArray(data.results.channels[0].alternatives) &&
+    data.results.channels[0].alternatives[0] &&
+    typeof data.results.channels[0].alternatives[0] === "object" &&
+    "transcript" in data.results.channels[0].alternatives[0] &&
+    typeof data.results.channels[0].alternatives[0].transcript === "string"
+      ? data.results.channels[0].alternatives[0].transcript
+      : "";
+
+  return transcript.trim();
+}
+
+function resolveRunwayPresetVoice(requestedVoice?: string, locale?: string) {
+  const normalizedVoice = requestedVoice?.trim();
+  const normalizedLocale = locale?.trim().toLowerCase() ?? "";
+
+  const aliasMap: Record<string, string> = {
+    marin: "Leslie",
+    cedar: "Arjun",
+    alloy: "Noah",
+    coral: "Rachel",
+    sage: "Elias",
+  };
+
+  if (normalizedVoice && aliasMap[normalizedVoice]) {
+    return aliasMap[normalizedVoice];
+  }
+
+  if (normalizedLocale.startsWith("hi")) {
+    return "Arjun";
+  }
+
+  return runwayDefaultPresetVoice;
+}
+
+async function createRunwayTask(
+  path: string,
+  body: Record<string, unknown>
+) {
+  if (!runwayApiSecret) {
+    throw new Error("Runway speech generation is unavailable because RUNWAYML_API_SECRET is missing.");
+  }
+
+  const response = await fetch(`${runwayApiBaseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${runwayApiSecret}`,
+      "Content-Type": "application/json",
+      "X-Runway-Version": runwayApiVersion,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseRunwayError(response));
+  }
+
+  const data = await response.json();
+  const taskId =
+    data &&
+    typeof data === "object" &&
+    "id" in data &&
+    typeof data.id === "string"
+      ? data.id
+      : null;
+
+  if (!taskId) {
+    throw new Error("Runway did not return a task ID.");
+  }
+
+  return taskId;
+}
+
+async function waitForRunwayTaskOutput(taskId: string, timeoutMs = 45_000) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const response = await fetch(`${runwayApiBaseUrl}/tasks/${taskId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${runwayApiSecret}`,
+        "X-Runway-Version": runwayApiVersion,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseRunwayError(response));
+    }
+
+    const data = await response.json();
+    const status =
+      data &&
+      typeof data === "object" &&
+      "status" in data &&
+      typeof data.status === "string"
+        ? data.status
+        : null;
+
+    if (status === "SUCCEEDED") {
+      const output =
+        data &&
+        typeof data === "object" &&
+        "output" in data &&
+        Array.isArray(data.output)
+          ? data.output
+          : null;
+      const outputUrl = output?.find((value): value is string => typeof value === "string");
+
+      if (!outputUrl) {
+        throw new Error("Runway completed the task without returning audio output.");
+      }
+
+      return outputUrl;
+    }
+
+    if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
+      const failureMessage =
+        data &&
+        typeof data === "object" &&
+        "failure" in data &&
+        data.failure &&
+        typeof data.failure === "object" &&
+        "message" in data.failure &&
+        typeof data.failure.message === "string"
+          ? data.failure.message
+          : `Runway task ended with status ${status}.`;
+
+      throw new Error(failureMessage);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+
+  throw new Error("Runway speech generation timed out.");
+}
+
+async function downloadRunwayAudio(outputUrl: string) {
+  const response = await fetch(outputUrl);
+
+  if (!response.ok) {
+    throw new Error("Runway returned an audio URL that could not be downloaded.");
+  }
+
+  const audioBytes = new Uint8Array(await response.arrayBuffer());
+  const mimeType = response.headers.get("content-type")?.split(";")[0] ?? "audio/mpeg";
+
+  return {
+    audioBase64: encodeBase64(audioBytes),
+    mimeType,
+  };
+}
+
 async function transcribeTeacherVoicePrompt(args: {
   audioBase64: string;
   mimeType?: string;
   locale?: string;
   hint?: string;
 }) {
+  if (deepgramApiKey) {
+    const transcript = await transcribeWithDeepgram(args);
+    if (!transcript) {
+      throw new Error("The voice provider returned an empty transcript.");
+    }
+
+    return transcript;
+  }
+
   if (!openAIKey) {
-    throw new Error("Voice transcription is unavailable because OPENAI_API_KEY is missing.");
+    throw new Error(
+      "Voice transcription is unavailable because neither DEEPGRAM_API_KEY nor OPENAI_API_KEY is configured."
+    );
   }
 
   const audioBytes = decodeBase64(args.audioBase64);
@@ -472,8 +757,24 @@ async function generateSpokenExplanation(args: {
   locale?: string;
   voice?: string;
 }) {
+  if (runwayApiSecret) {
+    const taskId = await createRunwayTask("/text_to_speech", {
+      model: runwaySpeechModel,
+      promptText: args.text.slice(0, 1_000),
+      voice: {
+        type: "runway-preset",
+        presetId: resolveRunwayPresetVoice(args.voice, args.locale),
+      },
+    });
+
+    const outputUrl = await waitForRunwayTaskOutput(taskId);
+    return downloadRunwayAudio(outputUrl);
+  }
+
   if (!openAIKey) {
-    throw new Error("Speech generation is unavailable because OPENAI_API_KEY is missing.");
+    throw new Error(
+      "Speech generation is unavailable because neither RUNWAYML_API_SECRET nor OPENAI_API_KEY is configured."
+    );
   }
 
   const response = await fetch("https://api.openai.com/v1/audio/speech", {

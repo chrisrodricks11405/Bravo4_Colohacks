@@ -45,6 +45,7 @@ export const CREATE_TABLES_SQL = [
     pulse TEXT NOT NULL,
     timestamp TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'local_hotspot',
+    reason TEXT,
     synced INTEGER NOT NULL DEFAULT 0,
     synced_at TEXT
   );`,
@@ -110,6 +111,7 @@ export const CREATE_TABLES_SQL = [
     anonymous_id TEXT NOT NULL,
     text TEXT NOT NULL,
     language TEXT,
+    reason TEXT,
     lesson_marker_id TEXT,
     timestamp TEXT NOT NULL,
     synced INTEGER NOT NULL DEFAULT 0,
@@ -214,6 +216,7 @@ export const CREATE_TABLES_SQL = [
   // Indexes for common queries
   `CREATE INDEX IF NOT EXISTS idx_pulse_cache_session ON local_pulse_cache(session_id);`,
   `CREATE INDEX IF NOT EXISTS idx_pulse_events_session ON local_pulse_events(session_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_pulse_events_reason ON local_pulse_events(session_id, reason);`,
   `CREATE INDEX IF NOT EXISTS idx_pulse_events_synced ON local_pulse_events(synced, session_id);`,
   `CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON pending_sync_jobs(status);`,
   `CREATE INDEX IF NOT EXISTS idx_sync_jobs_due ON pending_sync_jobs(status, next_attempt_at, created_at);`,

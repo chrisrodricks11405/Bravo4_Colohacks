@@ -7,6 +7,8 @@ export interface PulseSignalEvent {
   anonymousId: string;
   pulse: PulseValue;
   timestamp: string;
+  reason?: string;
+  source?: string;
 }
 
 /** Aggregated pulse snapshot for the teacher dashboard */

@@ -5,6 +5,7 @@ export interface AnonymousQuestionPayload {
   anonymousId: string;
   text: string;
   language?: string;
+  reason?: string;
   lessonMarkerId?: string;
   timestamp: string;
 }

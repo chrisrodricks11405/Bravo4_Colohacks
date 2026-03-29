@@ -32,6 +32,7 @@ type PulseEventRow = {
   anonymous_id: string;
   pulse: string;
   timestamp: string;
+  reason: string | null;
 };
 
 type QuestionRow = {
@@ -40,6 +41,7 @@ type QuestionRow = {
   anonymous_id: string;
   text: string;
   language: string | null;
+  reason: string | null;
   lesson_marker_id: string | null;
   timestamp: string;
 };
@@ -239,7 +241,7 @@ async function listUnsyncedPulseEvents(sessionId: string): Promise<PulseEventRow
   const db = await getDatabase();
   return db.getAllAsync<PulseEventRow>(
     `
-      SELECT id, session_id, anonymous_id, pulse, timestamp
+      SELECT id, session_id, anonymous_id, pulse, timestamp, reason
       FROM local_pulse_events
       WHERE session_id = ?
         AND synced = 0
@@ -253,7 +255,7 @@ async function listUnsyncedQuestions(sessionId: string): Promise<QuestionRow[]> 
   const db = await getDatabase();
   return db.getAllAsync<QuestionRow>(
     `
-      SELECT id, session_id, anonymous_id, text, language, lesson_marker_id, timestamp
+      SELECT id, session_id, anonymous_id, text, language, reason, lesson_marker_id, timestamp
       FROM question_cache
       WHERE session_id = ?
         AND synced = 0
@@ -364,6 +366,7 @@ async function handlePulseBatchJob(job: SyncJob): Promise<void> {
     anonymous_id: event.anonymous_id,
     pulse: event.pulse,
     timestamp: event.timestamp,
+    reason: event.reason,
   }));
 
   const { error } = await supabase
@@ -399,6 +402,7 @@ async function handleQuestionBatchJob(job: SyncJob): Promise<void> {
     anonymous_id: question.anonymous_id,
     text: question.text,
     language: question.language,
+    reason: question.reason,
     lesson_marker_id: question.lesson_marker_id,
     timestamp: question.timestamp,
   }));
